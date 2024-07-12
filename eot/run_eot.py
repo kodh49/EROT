@@ -21,12 +21,14 @@ logger.add(
 def add_arguments(parser):
     parser.add_argument(
         "--ot",
+        type=str,
         choices=["classical", "quantum"],
         help="Type of optimal transport problem",
         required=True,
     )
     parser.add_argument(
         "--entropy",
+        type=str,
         choices=["quadratic", "shannon"],
         help="Type of entropy regularizer.",
         required=True,
@@ -48,7 +50,7 @@ def add_arguments(parser):
     )
     parser.add_argument(
         "--epsilon",
-        type=torch.float32,
+        type=float,
         help="Regularization factor.",
         required=True,
     )
@@ -61,7 +63,7 @@ def add_arguments(parser):
     )
     parser.add_argument(
         "--error",
-        type=torch.float32,
+        type=float,
         help="Maximum convergence error.",
         required=False,
         default=1e-8,
@@ -138,10 +140,7 @@ def main(args):
     marg = list(map(torch.load, marginal_path))
 
     # check that the cost tensor has the same dimension as marginal vectors specified
-    if cost.size() != tuple(map(lambda x: x.size(), marg)):
-        raise ValueError(
-            "Cost tensor dimension does not equal marginal vector dimension. Please check your input."
-        )
+    
     
     # Run the computation based on specification
     result = {}

@@ -20,6 +20,7 @@ logger.add(
 def add_arguments(parser):
     parser.add_argument(
         "--n",
+        type=int,
         help="Number of data points of the cost tensor.",
         required=True,
     )

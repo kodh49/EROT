@@ -21,6 +21,7 @@ logger.add(
 def add_arguments(parser):
     parser.add_argument(
         "--n",
+        type=int,
         help="Number of data points of the probability tensor.",
         required=True,
     )
