@@ -59,7 +59,7 @@ def plot_matrices(data: dict, filename: str) -> None:
   else:
       logger.error("plot_matrices support 4 tensors at maximum.")
       sys.exit(1)
-  labels = data.keys()
+  labels = list(data.keys())
   matrices = data.values()
   # Loop through subplots and plot each matrix
   axes = axes.flatten()

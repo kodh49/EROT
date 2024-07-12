@@ -93,8 +93,8 @@ def main(args):
     num_iter = args.num_iter  # Number of iterations for alternating maximization.
     error = args.error  # Maximum convergence error of the algorithm
     gpu_device_num = args.gpu_device # GPU device number
-    out = str(Path(args.out).absolute())  # full path to output pytorch tensor file
-    outdir = os.path.dirname(out)  # path to output directory
+    out = str(Path(args.out).absolute()) # full path to output pytorch tensor file
+    outdir = os.path.join(os.path.dirname(out), Path(out).stem)  # path to output directory
     out_filename = os.path.basename(out)  # output filename
     plotdir = os.path.join(outdir, "plots") # path to plot directory
 
@@ -126,18 +126,15 @@ def main(args):
             f"Selected GPU device cuda:{gpu_device_num} is not available for computation. "
         )
 
+    # Create directory to store results
+    logger.info(f"Created directory: {outdir}.\n")
+    os.makedirs(os.path.join(outdir, "tensors"))
+    os.makedirs(plotdir)
     # Make sure the output can be written to
     if not os.access(outdir, os.W_OK):
         # give error message, and exit with error status
         logger.critical(f"Cannot write to the location: {outdir}.\n Please check if this location exists, and that you have the permission to write to this location. Exiting..\n")
         sys.exit(1)
-    elif len(os.listdir(outdir)) != 0:
-        logger.warning(f"Cannot overwrite to the location: {outdir}.\n Please use the empty directory. Exiting..\n")
-        sys.exit(1)
-    else:
-        logger.info(f"Created directory: {outdir}.\n")
-        os.makedir(os.path.join(outdir, "tensors"))
-        os.makedir(plotdir)
 
     # load the cost tensor
     logger.info("Loading the cost tensor file generated.")
@@ -176,7 +173,8 @@ def main(args):
 
     # save plots of results
     logger.info(f"Saving plots to {plotdir}.")
-    utils.plot_matrices(result, plotdir)
+    utils.plot_matrices({'Cost Matrix': cost}, os.path.join(plotdir, "cost_plot"))
+    utils.plot_matrices(result, os.path.join(plotdir, "coupling_plots"))
 
     # save results to an pytorch tensor file
     logger.info(f"Saving coupling tensors to {outdir}.")
@@ -190,3 +188,4 @@ if __name__ == "__main__":
     add_arguments(parser)
     args = parser.parse_args()
     main(args)
+    logger.trace(f"EOT computed a total of {x} FLOPS.")
