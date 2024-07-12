@@ -96,6 +96,8 @@ def main(args):
     out = str(Path(args.out).absolute())  # full path to output pytorch tensor file
     outdir = os.path.dirname(out)  # path to output directory
     out_filename = os.path.basename(out)  # output filename
+    plotdir = os.path.join(outdir, "plots") # path to plot directory
+
 
     # check if the output filename is valid
     if os.path.splitext(out_filename)[1] != ".pt":
@@ -127,9 +129,15 @@ def main(args):
     # Make sure the output can be written to
     if not os.access(outdir, os.W_OK):
         # give error message, and exit with error status
-        print(f"Cannot write to the location: {outdir}.\n")
-        print("Please check if this location exists, and that you have the permission to write to this location. Exiting..\n")
+        logger.critical(f"Cannot write to the location: {outdir}.\n Please check if this location exists, and that you have the permission to write to this location. Exiting..\n")
         sys.exit(1)
+    elif len(os.listdir(outdir)) != 0:
+        logger.warning(f"Cannot overwrite to the location: {outdir}.\n Please use the empty directory. Exiting..\n")
+        sys.exit(1)
+    else:
+        logger.info(f"Created directory: {outdir}.\n")
+        os.makedir(os.path.join(outdir, "tensors"))
+        os.makedir(plotdir)
 
     # load the cost tensor
     logger.info("Loading the cost tensor file generated.")
@@ -166,9 +174,13 @@ def main(args):
         case ("quantum", "quadratic"):
             logger.info("Computing Quadratic regularized Quantum OT.")
 
-    # process the results and save them to an pytorch tensor file
-    logger.info(f"Saving results to {outdir}.")
-    torch.save(result, out)
+    # save plots of results
+    logger.info(f"Saving plots to {plotdir}.")
+    utils.plot_matrices(result, plotdir)
+
+    # save results to an pytorch tensor file
+    logger.info(f"Saving coupling tensors to {outdir}.")
+    torch.save(result, os.path.join(outdir, "tensors", out_filename))
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(

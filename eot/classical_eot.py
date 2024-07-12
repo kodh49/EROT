@@ -1,9 +1,20 @@
 import torch
 from tqdm import trange
+import warnings, sys
+from loguru import logger
+
+warnings.filterwarnings("ignore")
+
+# Configure Loguru logger
+logger.remove()
+logger.add(
+    sys.stdout, format="{time:YYYY-MM-DD HH:mm:ss} - {level} - {message}", level="INFO"
+)
 
 # Run Cyclic Projection with cost tensor C and 2 marginal vectors marg[0,1] on cuda:gpu
 def quadratic_cyclic_projection(C:torch.Tensor, marg:list, epsilon:torch.float32, gpu:int, num_iter:int,
                                          convergence_error:float) -> torch.Tensor:
+    logger.info("Running Cyclic Projection.")
     a, b = marg[0], marg[1]
     n, m = a.size(0), b.size(0)
     # Transfer to GPU if applicable
@@ -26,6 +37,7 @@ def quadratic_cyclic_projection(C:torch.Tensor, marg:list, epsilon:torch.float32
 # Run Gradient Descent with cost tensor C and 2 marginal vectors marg[0,1] on cuda:gpu
 def quadratic_gradient_descent(C: torch.Tensor, marg:list, epsilon:torch.float32, gpu:int, num_iter:int,
                                         convergence_error:float) -> torch.Tensor:
+    logger.info("Running Gradient Descent.")
     a, b = marg[0], marg[1]
     n, m =a.size(0), b.size(0)
     step = 1.0 / (m + n)
@@ -48,6 +60,7 @@ def quadratic_gradient_descent(C: torch.Tensor, marg:list, epsilon:torch.float32
 # Run Fixed Point Iteration with cost tensor C and 2 marginal vectors marg[0,1] on cuda:gpu
 def quadratic_fixed_point_iteration(C:torch.Tensor, marg:list, epsilon: torch.float32, gpu:int, num_iter:int,
                                              convergence_error:float) -> torch.Tensor:
+    logger.info("Running Fixed Point Iteration.")
     a, b = marg[0], marg[1]
     n, m = a.size(0), b.size(0)
     # Transfer to GPU if applicable
@@ -71,6 +84,7 @@ def quadratic_fixed_point_iteration(C:torch.Tensor, marg:list, epsilon: torch.fl
 # Run Nesterov Gradient Descent with cost tensor C and 2 marginal vectors marg[0,1] on cuda:gpu
 def quadratic_nesterov_gradient_descent(C: torch.Tensor, marg: list, epsilon: torch.float32, gpu: int, num_iter: int,
                                                  convergence_error: float) -> torch.Tensor:
+    logger.info("Running Nesterov Gradient Descent.")
     a, b = marg[0], marg[1]
     n, m =a.size(0), b.size(0)
     step = 1.0 / (m + n)
