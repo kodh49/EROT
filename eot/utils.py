@@ -4,6 +4,7 @@ import torch
 import numpy as np
 from loguru import logger
 import matplotlib.pyplot as plt
+import torch.multiprocessing as mp
 
 # Configure Loguru logger
 logger.remove()
@@ -70,3 +71,8 @@ def plot_matrices(data: dict, filename: str) -> None:
   # Adjust layout (optional)
   fig.colorbar(im, ax=axes, shrink=0.5, location="bottom")
   fig.savefig(f"{filename}.png")    
+
+# add a function that takes the string and function pointer and add it to a mp.Queue
+def mp_add_queue(result_queue: mp.Queue, label: str, func, *func_args) -> None:
+    obj = func(*func_args)
+    result_queue.put((label, obj))

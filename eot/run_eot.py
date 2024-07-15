@@ -8,6 +8,7 @@ import argparse
 import utils as utils
 import warnings
 from loguru import logger
+import torch.multiprocessing as mp
 
 warnings.filterwarnings("ignore")
 
@@ -151,28 +152,42 @@ def main(args):
     
     
     # Run the computation based on specification
-    result = {}
+    result_queue = mp.Queue()
     match (ot_type, entropy):
         case ("classical", "shannon"):
             logger.info("Computing Shannon regularized Classical OT.")
         case ("classical", "quadratic"):
             logger.info("Computing Quadratic regularized Classical OT.")
-            result["cyclic projection"] = classical.quadratic_cyclic_projection(
-                C=cost, marg=marg, epsilon=epsilon, gpu=gpu_device_num, num_iter=num_iter, convergence_error=error
-            )
-            result["fixed point iteration"] = classical.quadratic_fixed_point_iteration(
-                C=cost, marg=marg, epsilon=epsilon, gpu=gpu_device_num, num_iter=num_iter, convergence_error=error
-            )
-            result["gradient descent"] = classical.quadratic_gradient_descent(
-                C=cost, marg=marg, epsilon=epsilon, gpu=gpu_device_num, num_iter=num_iter, convergence_error=error
-            )
-            result["nesterov gradient descent"] = classical.quadratic_nesterov_gradient_descent(
-                C=cost, marg=marg, epsilon=epsilon, gpu=gpu_device_num, num_iter=num_iter, convergence_error=error
-            )
+            algs = {"cyclic projection": classical.quadratic_cyclic_projection,
+                    "fixed point iteration": classical.quadratic_fixed_point_iteration,
+                    "gradient descent": classical.quadratic_gradient_descent,
+                    "nesterov gradient descent": classical.quadratic_nesterov_gradient_descent
+            }
         case ("quantum", "von neumann"):
             logger.info("Computing Von Neumann regularized Quantum OT.")
         case ("quantum", "quadratic"):
             logger.info("Computing Quadratic regularized Quantum OT.")
+
+    # multiprocessing
+    processes = []
+    for i, (func_label, func) in enumerate(algs):
+        gpu_device_num = i % torch.cuda.device_count()
+        process = mp.Process(target=utils.mp_add_queue, args=(
+            result_queue,
+            func_label,
+            func,
+            cost, marg, epsilon, gpu_device_num, num_iter, error
+        ))
+        processes.append(process)
+        process.start()
+    
+    for process in processes:
+        process.join()
+    
+    result = {}
+    while not result_queue.empty():
+        key, value = result_queue.get()
+        result[key] = value
 
     # save plots of results
     logger.info(f"Saving plots to {plotdir}.")
