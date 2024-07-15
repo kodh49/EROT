@@ -1,2 +1,2 @@
-# pytorch tensor
-*.pt
+# result tensors from tests
+/tests/testdata
