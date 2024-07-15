@@ -25,12 +25,14 @@ def quadratic_cyclic_projection(C:torch.Tensor, marg:list, epsilon:torch.float32
         rho = -(f[:, None] + g[None, :] - C).clamp(max=0)
         f = (epsilon * a - (rho + g[None, :] - C).sum(dim=1)) / m
         g = (epsilon * b - (rho + f[:, None] - C).sum(dim=0)) / n
-        # Check for convergence
-        if torch.max(torch.abs(f_prev - f)) < convergence_error and torch.max(torch.abs(g_prev - g)) < convergence_error:
+        # Check for convergence based on L^1 norm of projections
+        P = ((f[:, None] + g[None, :] - C).clamp(min=0) / epsilon)
+        if torch.abs((P.sum(dim=1) - a)).sum() < convergence_error and torch.abs((P.sum(dim=0) - b)).sum() < convergence_error:
             break
-    cyclic_projection = ((f[:, None] + g[None, :] - C).clamp(min=0) / epsilon).cpu() # Retrieve result to CPU
+    cyclic_projection = ((f[:, None] + g[None, :] - C).clamp(min=0) / epsilon)
+    logger.success(f"Computed Cyclic Projection with error: {compute_error(cyclic_projection, a,b)}.")
+    cyclic_projection = cyclic_projection.cpu()
     torch.cuda.empty_cache()
-    logger.success("Successfully computed Cyclic Projection.")
     return cyclic_projection
 
 # Run Gradient Descent with cost tensor C and 2 marginal vectors marg[0,1] on cuda:gpu
@@ -48,12 +50,13 @@ def quadratic_gradient_descent(C: torch.Tensor, marg:list, epsilon:torch.float32
         P = (f[:, None] + g[None, :] - C).clamp(min=0) / epsilon
         f -= step * epsilon * (P.sum(dim=1) - a)
         g -= step * epsilon * (P.sum(dim=0) - b)
-        # Check for convergence
-        if torch.max(torch.abs(f_prev - f)) < convergence_error and torch.max(torch.abs(g_prev - g)) < convergence_error:
+        # Check for convergence based on L^1 norm of projections
+        if torch.abs((P.sum(dim=1) - a)).sum() < convergence_error and torch.abs((P.sum(dim=0) - b)).sum() < convergence_error:
             break
-    gradient_descent = ((f[:, None] + g[None, :] - C).clamp(min=0) / epsilon).cpu()  # Retrieve result to CPU
+    gradient_descent = ((f[:, None] + g[None, :] - C).clamp(min=0) / epsilon) # Retrieve result to CPU
+    logger.success(f"Computed Gradient Descent with error: {compute_error(gradient_descent, a,b)}.")
+    gradient_descent = gradient_descent.cpu()
     torch.cuda.empty_cache()
-    logger.success("Successfully computed Gradient Descent.")
     return gradient_descent
 
 # Run Fixed Point Iteration with cost tensor C and 2 marginal vectors marg[0,1] on cuda:gpu
@@ -71,13 +74,14 @@ def quadratic_fixed_point_iteration(C:torch.Tensor, marg:list, epsilon: torch.fl
         v = -epsilon * (P.sum(dim=1) - a)
         f += (v - v.mean()) / m
         u = -epsilon * (P.sum(dim=0) - b)
-        g += (u - u.mean()) / n 
-        # Check for convergence
-        if torch.max(torch.abs(f_prev - f)) < convergence_error and torch.max(torch.abs(g_prev - g)) < convergence_error:
+        g += (u - u.mean()) / n
+        # Check for convergence based on L^1 norm of projections
+        if torch.abs((P.sum(dim=1) - a)).sum() < convergence_error and torch.abs((P.sum(dim=0) - b)).sum() < convergence_error:
             break
-    fixed_point_iteration = ((f[:, None] + g[None, :] - C).clamp(min=0) / epsilon).cpu()  # Retrieve result to CPU
+    fixed_point_iteration = ((f[:, None] + g[None, :] - C).clamp(min=0) / epsilon)  # Retrieve result to CPU
+    logger.success(f"Computed Fixed Point Iteration with error {compute_error(fixed_point_iteration, a,b)}.")
+    fixed_point_iteration = fixed_point_iteration.cpu()
     torch.cuda.empty_cache()
-    logger.success("Successfully computed Fixed Point Iteration.")
     return fixed_point_iteration
 
 # Run Nesterov Gradient Descent with cost tensor C and 2 marginal vectors marg[0,1] on cuda:gpu
@@ -97,16 +101,19 @@ def quadratic_nesterov_gradient_descent(C: torch.Tensor, marg: list, epsilon: to
         P = (f_p[:, None] + g_p[None, :] - C).clamp(min=0) / epsilon
         f_new = f_p - step * epsilon * (P.sum(dim=1) - a)
         g_new = g_p - step * epsilon * (P.sum(dim=0) - b)
-        # Check for convergence
-        f_diff = (f_previous - f_new).abs().sum()
-        g_diff = (g_previous - g_new).abs().sum()
         f_previous.copy_(f)
         g_previous.copy_(g)
         f.copy_(f_new)
         g.copy_(g_new)
-        if f_diff < convergence_error and g_diff < convergence_error:
+        # Check for convergence based on L^1 norm of projections
+        if torch.abs((P.sum(dim=1) - a)).sum() < convergence_error and torch.abs((P.sum(dim=0) - b)).sum() < convergence_error:
             break
-    nesterov_gradient_descent = ((f[:, None] + g[None, :] - C).clamp(min=0) / epsilon).cpu()
+    nesterov_gradient_descent = ((f[:, None] + g[None, :] - C).clamp(min=0) / epsilon)
+    logger.success(f"Computed Nesterov Gradient Descent with error {compute_error(nesterov_gradient_descent, a, b)}.")
+    nesterov_gradient_descent = nesterov_gradient_descent.cpu()
     torch.cuda.empty_cache()
-    logger.success("Successfully computed Nesterov Gradient Descent.")
     return nesterov_gradient_descent
+
+
+def compute_error(P: torch.Tensor, a: torch.Tensor, b: torch.Tensor) -> torch.float64:
+    return max(torch.abs((P.sum(dim=1) - a)).sum(), torch.abs((P.sum(dim=0) - b)).sum())
