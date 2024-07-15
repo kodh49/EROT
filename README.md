@@ -21,7 +21,7 @@ with Euclidean cost $C \in \mathbb{R}^{100\times 100}$, marginal probability vec
 
 ## Contents
 
-- [YACHT](#yacht)
+- [EROT](#erot)
    * [Quick start](#quick-start)
    * [Installation](#installation)
    * [Usage](#usage)
