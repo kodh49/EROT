@@ -52,8 +52,8 @@ def compute_weak_coulomb_cost(n):
     x = np.arange(n, dtype=np.float32) # vector in \R^n of the form [1,...,n]
     # L1 metric with diagonal entries of 1s
     C = torch.from_numpy(ot.dist(x.reshape((n,1)), x.reshape((n,1)), metric='cityblock')) + torch.diag(torch.ones(n))
-    C = torch.pow(C,-1) + torch.diag((n**3+1)*torch.ones(n)) # element-wise inverse and take extreme values for diagonal entries
-    return C/C.max() # normalize the cost
+    C = torch.pow(C,-1) + torch.diag((n+1)*torch.ones(n)) # element-wise inverse and take extreme values for diagonal entries
+    return C # normalize the cost
 
 # Strong Coulomb cost sets diagonal entires to be positive infinity
 def compute_strong_coulomb_cost(n):
