@@ -76,13 +76,6 @@ def add_arguments(parser):
         required=False,
         default=os.path.join(os.getcwd(), "result.pt"),
     )
-    parser.add_argument(
-        "--gpu_device",
-        type=int,
-        help="Device number of the GPU that will be used for computation.",
-        required=False,
-        default=0,
-    )
 
 
 def main(args):
@@ -93,7 +86,6 @@ def main(args):
     epsilon = args.epsilon  # Minimum probability of individual true negative.
     num_iter = args.num_iter  # Number of iterations for alternating maximization.
     error = args.error  # Maximum convergence error of the algorithm
-    gpu_device_num = args.gpu_device # GPU device number
     out = str(Path(args.out).absolute()) # full path to output pytorch tensor file
     outdir = os.path.join(os.path.dirname(out), Path(out).stem)  # path to output directory
     out_filename = os.path.basename(out)  # output filename
@@ -121,12 +113,6 @@ def main(args):
             f"Please run make_marginal_tensor.py first.",
         )
 
-    # check if selected gpu is available for computation
-    if not (0 <= gpu_device_num < torch.cuda.device_count()):
-        raise ValueError(
-            f"Selected GPU device cuda:{gpu_device_num} is not available for computation. "
-        )
-
     # Create directory to store results
     logger.info(f"Created directory: {outdir}.\n")
     os.makedirs(os.path.join(outdir, "tensors"))
@@ -144,51 +130,52 @@ def main(args):
     # load marginal tensors
     logger.info("Loading marginal tensor files.")
     marg = list(map(torch.load, marginal_path))
-
-    # check that the cost tensor has the same dimension as marginal vectors specified
-    
     
     # Run the computation based on specification
-    result_queue = mp.Queue()
     match (ot_type, entropy):
         case ("classical", "shannon"):
             logger.info("Computing Shannon regularized Classical OT.")
         case ("classical", "quadratic"):
             logger.info("Computing Quadratic regularized Classical OT.")
-            algs = {"cyclic projection": classical.quadratic_cyclic_projection,
-                    "fixed point iteration": classical.quadratic_fixed_point_iteration,
-                    "gradient descent": classical.quadratic_gradient_descent,
-                    "nesterov gradient descent": classical.quadratic_nesterov_gradient_descent
+            algs = {
+                "Cyclic Projection": classical.quadratic_cyclic_projection,
+                "Fixed Point iteration": classical.quadratic_fixed_point_iteration,
+                "Gradient Descent": classical.quadratic_gradient_descent,
+                "Nesterov Gradient Descent": classical.quadratic_nesterov_gradient_descent
             }
         case ("quantum", "von neumann"):
             logger.info("Computing Von Neumann regularized Quantum OT.")
         case ("quantum", "quadratic"):
             logger.info("Computing Quadratic regularized Quantum OT.")
 
-    # multiprocessing
-    processes = []
-    for i, (func_label, func) in enumerate(algs):
-        gpu_device_num = i % torch.cuda.device_count()
-        process = mp.Process(target=utils.mp_add_queue, args=(
-            result_queue,
-            func_label,
-            func,
-            cost, marg, epsilon, gpu_device_num, num_iter, error
-        ))
-        processes.append(process)
-        process.start()
-    
-    for process in processes:
-        process.join()
-    
     result = {}
-    while not result_queue.empty():
-        key, value = result_queue.get()
-        result[key] = value
+    # multiprocessing
+    with mp.Manager() as manager:
+        result_queue = manager.Queue() # create a joint queue
+        processes = []
+        i = 0
+        for func_label, func in algs.items():
+            gpu_device_num = i % torch.cuda.device_count()
+            process = mp.Process(target=utils.mp_add_queue, args=(
+                result_queue,
+                func_label,
+                func,
+                cost, marg, epsilon, gpu_device_num, num_iter, error
+            ))
+            processes.append(process)
+            process.start()
+            i += 1
+        
+        for process in processes:
+            process.join()
+    
+        while not result_queue.empty():
+            key, value = result_queue.get()
+            result[key] = value
 
     # save plots of results
     logger.info(f"Saving plots to {plotdir}.")
-    utils.plot_matrices({'Cost Matrix': cost}, os.path.join(plotdir, "cost_plot"))
+    # utils.plot_matrices({'Cost Matrix': cost}, os.path.join(plotdir, "cost_plot"))
     utils.plot_matrices(result, os.path.join(plotdir, "coupling_plots"))
 
     # save results to an pytorch tensor file
@@ -202,5 +189,5 @@ if __name__ == "__main__":
     )
     add_arguments(parser)
     args = parser.parse_args()
+    mp.set_start_method('spawn') # define multiprocessing context
     main(args)
-    logger.trace(f"EOT computed a total of {x} FLOPS.")

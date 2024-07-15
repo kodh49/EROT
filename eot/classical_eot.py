@@ -1,5 +1,4 @@
 import torch
-from tqdm import trange
 import warnings, sys
 from loguru import logger
 
@@ -14,13 +13,12 @@ logger.add(
 # Run Cyclic Projection with cost tensor C and 2 marginal vectors marg[0,1] on cuda:gpu
 def quadratic_cyclic_projection(C:torch.Tensor, marg:list, epsilon:torch.float32, gpu:int, num_iter:int,
                                          convergence_error:float) -> torch.Tensor:
-    logger.info("Running Cyclic Projection.")
     a, b = marg[0], marg[1]
     n, m = a.size(0), b.size(0)
     # Transfer to GPU if applicable
     device = torch.device(f'cuda:{gpu}' if torch.cuda.is_available() else 'cpu')
     C, a, b, f, g = map(lambda x: x.to(device), [C, a, b, torch.zeros_like(a), torch.zeros_like(b)])
-    for _ in trange(num_iter):
+    for _ in range(num_iter):
         # Store previous values in simple tensors
         f_prev, g_prev = f.detach().clone(), g.detach().clone()
         # Calculate rho and update f and g
@@ -32,19 +30,19 @@ def quadratic_cyclic_projection(C:torch.Tensor, marg:list, epsilon:torch.float32
             break
     cyclic_projection = ((f[:, None] + g[None, :] - C).clamp(min=0) / epsilon).cpu() # Retrieve result to CPU
     torch.cuda.empty_cache()
+    logger.success("Successfully computed Cyclic Projection.")
     return cyclic_projection
 
 # Run Gradient Descent with cost tensor C and 2 marginal vectors marg[0,1] on cuda:gpu
 def quadratic_gradient_descent(C: torch.Tensor, marg:list, epsilon:torch.float32, gpu:int, num_iter:int,
                                         convergence_error:float) -> torch.Tensor:
-    logger.info("Running Gradient Descent.")
     a, b = marg[0], marg[1]
     n, m =a.size(0), b.size(0)
     step = 1.0 / (m + n)
     # Transfer to GPU if applicable
     device = torch.device(f'cuda:{gpu}' if torch.cuda.is_available() else 'cpu')
     C, a, b, f, g = map(lambda x: x.to(device), [C, a, b, torch.zeros_like(a), torch.zeros_like(b)])
-    for _ in trange(num_iter):
+    for _ in range(num_iter):
         f_prev, g_prev = f.clone(), g.clone()   
         # Calculate P and update f and g
         P = (f[:, None] + g[None, :] - C).clamp(min=0) / epsilon
@@ -55,18 +53,18 @@ def quadratic_gradient_descent(C: torch.Tensor, marg:list, epsilon:torch.float32
             break
     gradient_descent = ((f[:, None] + g[None, :] - C).clamp(min=0) / epsilon).cpu()  # Retrieve result to CPU
     torch.cuda.empty_cache()
+    logger.success("Successfully computed Gradient Descent.")
     return gradient_descent
 
 # Run Fixed Point Iteration with cost tensor C and 2 marginal vectors marg[0,1] on cuda:gpu
 def quadratic_fixed_point_iteration(C:torch.Tensor, marg:list, epsilon: torch.float32, gpu:int, num_iter:int,
                                              convergence_error:float) -> torch.Tensor:
-    logger.info("Running Fixed Point Iteration.")
     a, b = marg[0], marg[1]
     n, m = a.size(0), b.size(0)
     # Transfer to GPU if applicable
     device = torch.device(f'cuda:{gpu}' if torch.cuda.is_available() else 'cpu')
     C, a, b, f, g = map(lambda x: x.to(device), [C, a, b, torch.zeros_like(a), torch.zeros_like(b)])
-    for _ in trange(num_iter):
+    for _ in range(num_iter):
         f_prev, g_prev = f.clone(), g.clone()
         # Calculate P and update f and g
         P = (f[:, None] + g[None, :] - C).clamp(min=0) / epsilon
@@ -79,19 +77,19 @@ def quadratic_fixed_point_iteration(C:torch.Tensor, marg:list, epsilon: torch.fl
             break
     fixed_point_iteration = ((f[:, None] + g[None, :] - C).clamp(min=0) / epsilon).cpu()  # Retrieve result to CPU
     torch.cuda.empty_cache()
+    logger.success("Successfully computed Fixed Point Iteration.")
     return fixed_point_iteration
 
 # Run Nesterov Gradient Descent with cost tensor C and 2 marginal vectors marg[0,1] on cuda:gpu
 def quadratic_nesterov_gradient_descent(C: torch.Tensor, marg: list, epsilon: torch.float32, gpu: int, num_iter: int,
                                                  convergence_error: float) -> torch.Tensor:
-    logger.info("Running Nesterov Gradient Descent.")
     a, b = marg[0], marg[1]
     n, m =a.size(0), b.size(0)
     step = 1.0 / (m + n)
     device = torch.device(f'cuda:{gpu}' if torch.cuda.is_available() else 'cpu')
     C, a, b, f, g = map(lambda x: x.to(device), [C, a, b, torch.zeros_like(a), torch.zeros_like(b)])
     f_previous, g_previous = f.clone(), g.clone()
-    for _ in trange(num_iter):
+    for _ in range(num_iter):
         # Compute the Nesterov updates
         f_p = f + n * (f - f_previous) / (n + 3)
         g_p = g + n * (g - g_previous) / (n + 3)
@@ -110,4 +108,5 @@ def quadratic_nesterov_gradient_descent(C: torch.Tensor, marg: list, epsilon: to
             break
     nesterov_gradient_descent = ((f[:, None] + g[None, :] - C).clamp(min=0) / epsilon).cpu()
     torch.cuda.empty_cache()
+    logger.success("Successfully computed Nesterov Gradient Descent.")
     return nesterov_gradient_descent

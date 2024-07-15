@@ -39,18 +39,13 @@ def plot_vectors(n: int, data: dict, filename: str) -> None:
         plt.plot(x, vec, label=rf'\{label}', color=COLORS[i])
         i += 1
     plt.legend()
-    plt.savefig(fig, f"{filename}.png")
-
-def _plot_matrix(matrix: torch.Tensor, label: str, filename: str) -> None:
-    fig = plt.imshow(matrix, interpolation='nearest', cmap=HEATMAP_COLOR, extent=(0.5,np.shape(matrix)[0]+0.5,0.5,np.shape(matrix)[1]+0.5))
-    plt.colorbar()
-    plt.title(label=label)
-    plt.savefig(fig, f"{filename}.png")
+    fig.savefig(f"{filename}.png")
 
 # save plots of a dictionary of pytorch tensors with attached labels
 def plot_matrices(data: dict, filename: str) -> None:
+  labels, matrices = list(data.keys()), list(data.values())
   if len(data) == 1:
-      _plot_matrix(data[0], filename)
+      fig, axes = plt.subplots(1, 1, figsize=(14,14))
   elif len(data) == 2:
       fig, axes = plt.subplots(1, 2, figsize=(14,14)) 
   elif len(data) == 3:
@@ -60,8 +55,6 @@ def plot_matrices(data: dict, filename: str) -> None:
   else:
       logger.error("plot_matrices support 4 tensors at maximum.")
       sys.exit(1)
-  labels = data.keys()
-  matrices = data.values()
   # Loop through subplots and plot each matrix
   axes = axes.flatten()
   for i, matrix in enumerate(matrices):
@@ -73,6 +66,6 @@ def plot_matrices(data: dict, filename: str) -> None:
   fig.savefig(f"{filename}.png")    
 
 # add a function that takes the string and function pointer and add it to a mp.Queue
-def mp_add_queue(result_queue: mp.Queue, label: str, func, *func_args) -> None:
+def mp_add_queue(result_queue, label: str, func, *func_args) -> None:
     obj = func(*func_args)
     result_queue.put((label, obj))
