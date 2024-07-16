@@ -1,7 +1,6 @@
 import os
 import sys
 import torch
-import classical_eot as classical
 import quantum_eot as quantum
 from pathlib import Path
 import argparse
@@ -20,13 +19,6 @@ logger.add(
 
 
 def add_arguments(parser):
-    parser.add_argument(
-        "--ot",
-        type=str,
-        choices=["classical", "quantum"],
-        help="Type of optimal transport problem",
-        required=True,
-    )
     parser.add_argument(
         "--entropy",
         type=str,
@@ -79,7 +71,6 @@ def add_arguments(parser):
 
 
 def main(args):
-    ot_type = args.ot # type of optimal transport problem
     entropy = args.entropy # type of entropy regularizer
     cost_tensor_path = str(Path(args.cost).absolute())  # path to cost.pt file
     marginal_path = args.marginal  # list of paths to marginal.pt files
@@ -132,20 +123,11 @@ def main(args):
     marg = list(map(torch.load, marginal_path))
     
     # Run the computation based on specification
-    match (ot_type, entropy):
-        case ("classical", "shannon"):
-            logger.info("Computing Shannon regularized Classical OT.")
-        case ("classical", "quadratic"):
-            logger.info("Computing Quadratic regularized Classical OT.")
-            algs = {
-                "Cyclic Projection": classical.quadratic_cyclic_projection,
-                "Fixed Point iteration": classical.quadratic_fixed_point_iteration,
-                "Gradient Descent": classical.quadratic_gradient_descent,
-                "Nesterov Gradient Descent": classical.quadratic_nesterov_gradient_descent
-            }
-        case ("quantum", "von neumann"):
+    match entropy:
+        case "von neumann":
             logger.info("Computing Von Neumann regularized Quantum OT.")
-        case ("quantum", "quadratic"):
+            algs={}
+        case "quadratic":
             logger.info("Computing Quadratic regularized Quantum OT.")
 
     result = {}
@@ -184,7 +166,7 @@ def main(args):
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(
-        description="This script computes optimal n-couplings from multiple marginal distributions and a cost tensor.",
+        description="This script computes optimal n quantum couplings from multiple marginal distributions and a cost tensor.",
         formatter_class=argparse.ArgumentDefaultsHelpFormatter,
     )
     add_arguments(parser)
