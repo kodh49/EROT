@@ -12,9 +12,11 @@ We provide a demo to show how to use EROT for classical quadratic entropy regula
 python3 ./eot/run_eot.py --ot classical --entropy quadratic --cost ./demo/C.pt --marginal ./demo/X.pt ./demo/Y.pt --epsilon 1 --num_iter 50000 --error 1e-8 --out demo_sol.pt
 ```
 There will be an output Pytorch tensor file `demo_sol.pt` encoding the optimal coupling matrix of the classical quadratic entropy regularized optimal transport problem of
+
 $$
-\text{OT}_{\epsilon}(X,Y) := \inf \{ C_\epsilon(P) : P\in\Pi(X,Y)\}. 
+OT_{\epsilon}(X,Y) := \inf C_\epsilon(P) : P\in\Pi(X,Y) . 
 $$
+
 with Euclidean cost $C \in \mathbb{R}^{100\times 100}$, marginal probability vectors $X,Y \in \mathbb{R}^{100}$ with $X \sim \mathcal{N}(\mu_X=2.1,\sigma_X=1)$ and $Y \sim \mathcal{N}(\mu_Y=-3, \sigma_Y=0.75)$ under the regularization parameter $\varepsilon = 1$ and tolerance $10^{-8}$.
 
 </br>
