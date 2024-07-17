@@ -13,7 +13,7 @@ python3 ./eot/run_eot.py --ot classical --entropy quadratic --cost ./demo/C.pt -
 ```
 There will be an output Pytorch tensor file `demo_sol.pt` encoding the optimal coupling matrix of the classical quadratic entropy regularized optimal transport problem of
 $$
-\mathrm{OT}_{\varepsilon}(X,Y) := \inf \{ C_\varepsilon(P) : P\in\Pi(X,Y)\}. 
+\mathrm{OT}_{\epsilon}(X,Y) := \inf \{ C_\epsilon(P) : P\in\Pi(X,Y)\}. 
 $$
 with Euclidean cost $C \in \mathbb{R}^{100\times 100}$, marginal probability vectors $X,Y \in \mathbb{R}^{100}$ with $X \sim \mathcal{N}(\mu_X=2.1,\sigma_X=1)$ and $Y \sim \mathcal{N}(\mu_Y=-3, \sigma_Y=0.75)$ under the regularization parameter $\varepsilon = 1$ and tolerance $10^{-8}$.
 
