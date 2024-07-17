@@ -1,0 +1,28 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "EROT"
+version = "0.0.1"
+authors = [
+  { name="Dohyoung Ko", email="dzk5572@gmail.com" },
+]
+description = "A package for entropy regularized optimal transport"
+readme = "README.md"
+requires-python = ">=3.8"
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+]
+
+[tool.setuptools.packages.find]
+where = ["eot"]
+include = ["<package name>"]
+exclude = ["demo", "deprecated"]
+namespaces = false
+
+[project.urls]
+Homepage = "https://github.com/kodh49/EROT"
+Issues = "https://github.com/kodh49/EROT/issues"
