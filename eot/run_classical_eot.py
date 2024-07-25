@@ -126,6 +126,10 @@ def main(args):
     match entropy:
         case "shannon":
             logger.info("Computing Shannon regularized Classical OT.")
+            algs = {
+                "Sinkhorn": classical.shannon_sinkhorn
+                # listed algorithms will be executed
+            }
         case "quadratic":
             logger.info("Computing Quadratic regularized Classical OT.")
             algs = {

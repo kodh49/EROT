@@ -27,6 +27,21 @@ def check_file_existence(file_path: str, error_description: str) -> None:
     if not os.path.exists(file_path):
         raise ValueError(error_description)
 
+def construct_arguments(vars, i):
+    result = []
+    for (j, var) in enumerate(vars):
+        if j != i:
+            result.append(var)
+            result.append([j])
+    return result
+
+def get_all_arguments(vars):
+    result = []
+    for (j, var) in enumerate(vars):
+        result.append(var)
+        result.append([j])
+    return result
+
 
 def plot_vectors(n: int, data: dict, filename: str) -> None:
     """
