@@ -1,14 +1,11 @@
 # Required modules
 import os
-import ot
 import sys
-import jax
 import torch
+import jax
 import argparse
 import warnings
-import numpy as np
 import jax.numpy as jnp
-from functools import lru_cache
 from pathlib import Path
 from loguru import logger
 
@@ -50,126 +47,67 @@ def add_arguments(parser):
         default=os.path.join(os.getcwd(), "mu.pt"),
     )
 
-# Euclidean cost computes the Euclidean distance between two coordinates
-def compute_euclidean_cost_pot(n):
-    """
-    Computes the Euclidean cost tensor for 2 marginals setting using POT and PyTorch
-    """
-    # Initialize cost matrix
-    x = torch.arange(n, dtype=torch.float32) # vector in \R^n of the form [1,...,n]
-    C = ot.dist(x.reshape((n,1)), x.reshape((n,1))) # Euclidean metric as a cost function
-    return C/C.max() # normalize the cost
-
-# Weak Coulomb cost sets relatively large real value for diagonal entries
-def compute_weak_coulomb_cost_pot(n):
-    """
-    Computes the Weak Coulomb cost tensor for 2 marginals setting using POT and PyTorch
-    """
-    x = np.arange(n, dtype=np.float32) # vector in \R^n of the form [1,...,n]
-    # L1 metric with diagonal entries of 1s
-    C = torch.from_numpy(ot.dist(x.reshape((n,1)), x.reshape((n,1)), metric='cityblock')) + torch.diag(torch.ones(n))
-    C = torch.pow(C,-1) + torch.diag((n+1)*torch.ones(n)) # element-wise inverse and take extreme values for diagonal entries
-    return C # normalize the cost
-
-# Strong Coulomb cost sets diagonal entires to be positive infinity
-def compute_strong_coulomb_cost_pot(n):
-    """
-    Computes the Strong Coulomb cost tensor for 2 marginals setting using POT and PyTorch
-    """
-    x = np.arange(n, dtype=np.float32) # vector in \R^n of the form [1,...,n]
-    # L1 metric with diagonal entries of 1s
-    C = torch.from_numpy(ot.dist(x.reshape((n,1)), x.reshape((n,1)), metric='cityblock')) + torch.diag(torch.ones(n))
-    C = torch.pow(C,-1) + torch.diag(torch.ones(n) * float('inf')) # element-wise inverse and take + infinity for diagonal entries
-    return C
-
-@lru_cache(maxsize=None)
-def cartesian_product_jax(n, N):
+def _cartesian_product_chunked(n, N, start, end):
     ranges = [jnp.arange(n)] * N
-    grid = jax.numpy.meshgrid(*ranges, indexing='ij')
-    product = jax.numpy.stack(grid, axis=-1).reshape(-1, N)
-    return product
-
-@lru_cache(maxsize=None)
-def cartesian_product_jax_slice(n, N, start, end):
-    product = cartesian_product_jax(n, N)
+    grid = jnp.meshgrid(*ranges, indexing='ij')
+    product = jnp.stack(grid, axis=-1).reshape(-1, N)
     return product[start:end]
 
-def compute_cost_single(index, N, k, key):
+def get_marginals_to_update(N: int, k: int):
+    choice = jax.random.choice(jax.random.PRNGKey(0), N, (k,), replace=False)
+    return choice
+
+def single_strong_coulomb_cost(index, marginals_to_update):
     total_cost = 0
-    marginals_to_update = jax.random.choice(key, N, (k,), replace=False)
     for i in marginals_to_update:
         for j in marginals_to_update:
             if i < j:
                 diff = jnp.abs(index[i] - index[j])
-                total_cost += jnp.where(diff != 0, diff ** 2, jnp.inf)
+                total_cost += jnp.where(diff != 0, 2 / diff, jnp.inf)
     return total_cost
 
-def compute_cost_vmap(index_batch, N, k, key):
-    return jax.vmap(compute_cost_single, in_axes=(0, None, None, None))(index_batch, N, k, key)
+def single_weak_coulomb_cost(index, marginals_to_update):
+    total_cost = 0
+    for i in marginals_to_update:
+        for j in marginals_to_update:
+            if i < j:
+                diff = jnp.abs(index[i] - index[j])
+                total_cost += jnp.where(diff != 0, 2 / diff, 1e+8)
+    return total_cost
 
-@lru_cache(maxsize=None)
-def compute_coulomb_cost_jax(n, N, batch_size=None, k=None):
-    """
-    Computes the Strong Coulomb cost tensor for multi marginals (N > 2) setting using JAX
-    """
+def single_euclidean_cost(index, marginals_to_update):
+    total_cost = 0
+    for i in marginals_to_update:
+        for j in marginals_to_update:
+            if i < j:
+                diff = jnp.abs(index[i] - index[j])
+                total_cost += jnp.where(diff != 0, diff**2, 0)
+    return total_cost
+
+def compute_cost(n, N, single_cost, initial_batch_size=None, k=3):
     shape = (n,) * N
-    indices = cartesian_product_jax(n, N)
-    if batch_size is None:
-        batch_size = len(indices)
+    total_indices = n ** N
+
+    if initial_batch_size is None:
+        initial_batch_size = total_indices // 10  # Adjust the initial batch size to a reasonable value
+
     C = jnp.zeros(shape)
-    compute_cost_vmap_fn = jax.vmap(compute_cost_single, in_axes=(0, None, None, None))
-    for batch_start in range(0, len(indices), batch_size):
-        batch_indices = indices[batch_start:batch_start + batch_size]
-        key = jax.random.PRNGKey(batch_start)  # Create a new key for each batch
-        costs = compute_cost_vmap_fn(batch_indices, N, k, key)
-        for idx, cost in zip(batch_indices, costs):
-            C = C.at[tuple(idx)].set(cost)
+    compute_cost_vmap = jax.vmap(single_cost, in_axes=(0, None))
+
+    current_batch_size = initial_batch_size
+    for batch_start in range(0, total_indices, current_batch_size):
+        try:
+            batch_end = min(batch_start + current_batch_size, total_indices)
+            batch_indices = _cartesian_product_chunked(n, N, batch_start, batch_end)
+            costs = compute_cost_vmap(batch_indices, get_marginals_to_update(N,k))
+            C = C.at[tuple(batch_indices.T)].set(costs)
+        except ValueError:
+            # Reduce batch size on memory exhaustion and retry
+            current_batch_size = max(1, current_batch_size // 2)
+            logger.warning(f"Memory exhausted. Reducing batch size to {current_batch_size}")
+            batch_start -= current_batch_size  # Retry the same batch with a smaller size
     return C
 
-def compute_euclidean_cost_jax(n, N, batch_size=1000, k=2):
-    """
-    Computes the Euclidean cost tensor for multi marginals (N > 2) setting using JAX
-    """
-    key = jax.random.PRNGKey(0)
-    total_elements = n ** N
-    num_batches = total_elements // batch_size + int(total_elements % batch_size != 0)
-    C = jnp.zeros((n,) * N)
-    compute_cost_vmap_fn = jax.vmap(compute_cost_single, in_axes=(0, None, None, None))
-    for batch_idx in range(num_batches):
-        start = batch_idx * batch_size
-        end = min(start + batch_size, total_elements)
-        batch_indices = cartesian_product_jax_slice(n, N, start, end)
-        costs = compute_cost_vmap_fn(batch_indices, N, k, key)
-        for idx, cost in zip(batch_indices, costs):
-            C = C.at[tuple(idx)].set(cost)
-    return C
-
-def compute_euclidean_cost(n, N):
-    """
-    Computes n^N dimensional Euclidean cost tensor for N marginals
-    """
-    if N == 2:
-        return compute_euclidean_cost_pot(n)
-    else:
-        return compute_euclidean_cost_jax(n, N)
-    
-def compute_strong_coulomb_cost(n: int, N: int):
-    """
-    Computes n^N dimensional Strong Coulomb cost tensor for N marginals
-    """
-    if N == 2:
-        return compute_strong_coulomb_cost_pot(n)
-    else:
-        return compute_coulomb_cost_jax(n, N)
-
-def compute_weak_coulomb_cost(n, N):
-    """
-    Computes n^N dimensional Weak Coulomb cost tensor for N marginals
-    """
-    if N == 2:
-        return compute_weak_coulomb_cost_pot(n)
-    else:
-        return compute_coulomb_cost_jax(n, N)
     
 def main(args):
     n = args.n # number of points in each space
@@ -192,15 +130,13 @@ def main(args):
         print("Please check if this location exists, and that you have the permission to write to this location. Exiting..\n")
         sys.exit(1)
     
-    # generate marginal probability tensor
-    logger.info("Generating cost tensor.")
     match cost_type:
         case "euclidean":
-            result = compute_euclidean_cost(n, N)
+            result = compute_cost(n, N, single_cost=single_euclidean_cost)
         case "weak coulomb":
-            result = compute_weak_coulomb_cost(n, N)
+            result = compute_cost(n, N, single_cost=single_weak_coulomb_cost)
         case "strong coulomb":
-            result = compute_strong_coulomb_cost(n, N)
+            result = compute_cost(n, N, single_cost=single_strong_coulomb_cost)
     
     # save generated vector
     logger.info(f"Saving results to {outdir}.")
