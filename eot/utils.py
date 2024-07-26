@@ -16,6 +16,29 @@ logger.add(
 COLORS = ['b','g','r','c','m','y']
 HEATMAP_COLOR = plt.cm.inferno
 
+def select_gpu() -> torch.device:
+    """
+    Select the GPU device with the most amount of free memory available
+    """
+    if torch.cuda.is_available():
+        num_devices = torch.cuda.device_count()
+        free_memory = [get_gpu_free_memory(i) for i in range(num_devices)]
+        best_device = torch.device(f'cuda:{free_memory.index(max(free_memory))}')
+    else:
+        best_device = torch.device('cpu')
+    return best_device
+
+def get_gpu_free_memory(device_num):
+    """
+    Helper function that returns the available memory of the selected GPU device
+    """
+    if torch.cuda.is_available():
+        device = torch.device(f'cuda:{device_num}')
+        torch.cuda.set_device(device)
+        free_memory = torch.cuda.memory_reserved(device) - torch.cuda.memory_allocated(device)
+        return free_memory
+    else:
+        return 0
 
 def check_file_existence(file_path: str, error_description: str) -> None:
     """
