@@ -1,4 +1,4 @@
-name: FUSRP
+name: erot_env
 channels:
   - pytorch
   - nvidia
@@ -265,7 +265,6 @@ dependencies:
       - build==1.2.1
       - cryptography==42.0.8
       - docutils==0.21.2
-      - erot==0.0.1
       - importlib-metadata==8.0.0
       - jaraco-classes==3.4.0
       - jaraco-context==5.3.0

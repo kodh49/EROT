@@ -3,8 +3,15 @@ import os
 import sys
 import utils 
 import torch
+
+# Set the environment variable before importing JAX
+os.environ["JAX_PLATFORMS"] = "cpu"
+os.environ["XLA_PYTHON_CLIENT_PREALLOCATE"] = "false"
+
 import jax
+import jax.numpy as jnp
 import time
+from tqdm import trange
 import argparse
 import warnings
 from pathlib import Path
@@ -20,60 +27,53 @@ logger.add(
 
 device = utils.select_gpu()
 
-def _cartesian_product_chunked(n, N, start, end):
-    ranges = [torch.arange(n, device=device)] * N
-    grid = torch.meshgrid(*ranges, indexing='ij')
-    product = torch.stack(grid, dim=-1).reshape(-1, N)
-    return product[start:end]
+def cartesian_product_jax(n, N):
+    ranges = [jnp.arange(n)] * N
+    grid = jnp.meshgrid(*ranges, indexing='ij')
+    product = jnp.stack(grid, axis=-1).reshape(-1, N)
+    return product
 
-def get_marginals_to_update(N: int, k: int):
-    choice = jax.dlpack.to_dlpack(jax.random.choice(jax.random.PRNGKey(0), N, (k,), replace=False))
-    return torch.tensor(choice)
-
-def single_strong_coulomb_cost(index, marginals_to_update):
-    indices = index[:, marginals_to_update]
-    diffs = torch.abs(indices.unsqueeze(2) - indices.unsqueeze(1))
-    mask = torch.triu(torch.ones(diffs.shape[-2:], device=device), diagonal=1)
-    cost_matrix = torch.where(diffs != 0, 2 / diffs, torch.tensor(float('inf'), device=device))
-    total_cost = (cost_matrix * mask).sum(dim=[1, 2])
+def single_strong_coulomb_cost(index, N, k):
+    total_cost = 0
+    marginals_to_update = jax.random.choice(jax.random.PRNGKey(0), N, (k,), replace=False)
+    for i in marginals_to_update:
+        for j in marginals_to_update:
+            if i < j:
+                diff = jnp.abs(index[i] - index[j])
+                total_cost += jnp.where(diff != 0, 2 / diff, jnp.inf)
     return total_cost
 
-def single_weak_coulomb_cost(index, marginals_to_update):
-    indices = index[:, marginals_to_update]
-    diffs = torch.abs(indices.unsqueeze(2) - indices.unsqueeze(1))
-    mask = torch.triu(torch.ones(diffs.shape[-2:], device=device), diagonal=1)
-    cost_matrix = torch.where(diffs != 0, 2 / diffs, torch.tensor(1e+8, device=device))
-    total_cost = (cost_matrix * mask).sum(dim=[1, 2])
+def single_weak_coulomb_cost(index, N, k):
+    total_cost = 0
+    marginals_to_update = jax.random.choice(jax.random.PRNGKey(0), N, (k,), replace=False)
+    for i in marginals_to_update:
+        for j in marginals_to_update:
+            if i < j:
+                diff = jnp.abs(index[i] - index[j])
+                total_cost += jnp.where(diff != 0, 2 / diff, 1e+8)
     return total_cost
 
-def single_euclidean_cost(index, marginals_to_update):
-    indices = index[:, marginals_to_update]
-    diffs = torch.abs(indices.unsqueeze(2) - indices.unsqueeze(1))
-    mask = torch.triu(torch.ones(diffs.shape[-2:], device=device), diagonal=1)
-    cost_matrix = diffs ** 2
-    total_cost = (cost_matrix * mask).sum(dim=[1, 2])
+def single_euclidean_cost(index, N, k):
+    total_cost = 0
+    marginals_to_update = jax.random.choice(jax.random.PRNGKey(0), N, (k,), replace=False)
+    for i in marginals_to_update:
+        for j in marginals_to_update:
+            if i < j:
+                diff = jnp.abs(index[i] - index[j])
+                total_cost += jnp.where(diff != 0, diff**2, jnp.inf)
     return total_cost
 
-def compute_cost(n: int, N: int, single_cost, batch_size = None, k = 3) -> torch.Tensor:
-    start_time = time.time()
-    shape, total_indices = (n,) * N, n ** N
+def compute_cost(n: int, N: int, single_cost, batch_size = None, k = 2):
+    shape = (n,) * N
+    indices = cartesian_product_jax(n, N)
     if batch_size is None:
-        batch_size = total_indices // 10  # adjust the initial batch size
-    C = torch.zeros(shape, device=device)
-    # take adaptive batch sizes
-    current_batch_size = batch_size
-    for batch_start in range(0, total_indices, current_batch_size):
-        try:
-            batch_end = min(batch_start + current_batch_size, total_indices)
-            batch_indices = _cartesian_product_chunked(n, N, batch_start, batch_end).to(device)
-            marginals_to_update = get_marginals_to_update(N, k).to(device)
-            costs = single_cost(batch_indices, marginals_to_update)
-            C[tuple(batch_indices.T)] = costs
-        except RuntimeError: # memory exhaustion
-            current_batch_size = max(1, current_batch_size // 2) # reduce batch size
-            batch_start -= current_batch_size  # reattempt the same batch with a smaller size
-    end_time = time.time()
-    logger.success(f"Time taken: {end_time - start_time}")
+        batch_size = len(indices) // 10
+    C = jnp.zeros(shape)
+    compute_cost_vmap = jax.vmap(single_cost, in_axes=(0, None, None))
+    for batch_start in trange(0, len(indices), batch_size):
+        batch_indices = indices[batch_start:batch_start + batch_size]
+        costs = compute_cost_vmap(batch_indices, N, k)
+        C = C.at[tuple(batch_indices.T)].set(costs)
     return C
 
 def add_arguments(parser):
@@ -127,6 +127,7 @@ def main(args):
         print("Please check if this location exists, and that you have the permission to write to this location. Exiting..\n")
         sys.exit(1)
     
+    start_time = time.time()
     match cost_type:
         case "euclidean":
             result = compute_cost(n, N, single_cost=single_euclidean_cost)
@@ -134,8 +135,11 @@ def main(args):
             result = compute_cost(n, N, single_cost=single_weak_coulomb_cost)
         case "strong coulomb":
             result = compute_cost(n, N, single_cost=single_strong_coulomb_cost)
+    end_time = time.time()
     # save generated vector
+    logger.info(f"Elapsed Time {end_time-start_time}")
     logger.info(f"Saving results to {outdir}.")
+    result = torch.from_dlpack(jax.dlpack.to_dlpack(result))
     torch.save(result, out)
 
 if __name__ == "__main__":
