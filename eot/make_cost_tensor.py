@@ -1,21 +1,5 @@
-# Required modules
-import os
-import sys
-import utils 
-import torch
-
-# Set the environment variable before importing JAX
-os.environ["JAX_PLATFORMS"] = "cpu"
-os.environ["XLA_PYTHON_CLIENT_PREALLOCATE"] = "false"
-
-import jax
-import jax.numpy as jnp
-import time
-from tqdm import trange
-import argparse
-import warnings
-from pathlib import Path
-from loguru import logger
+# import requried external libraries
+from ..env.dependencies import *
 
 warnings.filterwarnings("ignore")
 
@@ -24,8 +8,6 @@ logger.remove()
 logger.add(
     sys.stdout, format="{time:YYYY-MM-DD HH:mm:ss} - {level} - {message}", level="INFO"
 )
-
-device = utils.select_gpu()
 
 def cartesian_product_jax(n, N):
     ranges = [jnp.arange(n)] * N

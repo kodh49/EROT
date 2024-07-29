@@ -1,11 +1,5 @@
-import torch
-import jax
-import time
 import utils
-import numpy as np
-import jax.numpy as jnp
-import warnings, sys
-from loguru import logger
+from ..env.dependencies import *
 
 warnings.filterwarnings("ignore")
 
@@ -15,149 +9,194 @@ logger.add(
     sys.stdout, format="{time:YYYY-MM-DD HH:mm:ss} - {level} - {message}", level="INFO"
 )
 
-# Run Sinkhorn Algorithm with cost tensor C and multi marginal vectors
-def shannon_sinkhorn(marginals: list, C, epsilon:float, precision:float, max_iters: int):
+def sinkhorn_update(marg, K, N, args):
+    return marg / (jnp.einsum(K, jnp.arange(N), args))
+
+@jax.jit
+def shannon_sinkhorn(marginals: list, C, epsilon:float, convergence_error:float, max_iters: int):
     start_time = time.time()
     N = len(marginals)
     n = marginals[0].shape[0]
     vars = [jnp.ones(n) for _ in range(N)]
     K = jnp.exp(-C/epsilon) # Kernel tensor
-    error = sinkhorn_compute_error(vars, marginals, K)
+    error = convergence_error*2
     iterations = 0
-    for t in range(1, max_iters):
+    for t in range(1, max_iters+1):
         for i in range(N):
             args = utils.construct_arguments(vars, i)
-            vars[i] = marginals[i] / (jnp.einsum(K, np.arange(N), *args))
-        # if t % 10 == 0:
+            vars[i] = sinkhorn_update(marginals[i], K, N, *args)
         error = sinkhorn_compute_error(vars, marginals, K)
-        iterations = t
-        if error <= precision:
+        if error <= convergence_error:
+            iterations = t
             break
     P = compute_P(vars, K)
     end_time = time.time()
     time_taken = end_time - start_time
-    logger.success(f"Sinkhorn | elapsed time: {time_taken} | error: {error}.")
+    logger.success(f"Sinkhorn | Elapsed: {time_taken} | Precision: {error}.")
     return P, error, iterations, time_taken
 
-# Run Cyclic Projection with cost tensor C and 2 marginal vectors marg[0,1] on cuda:gpu
-def quadratic_cyclic_projection(C:torch.Tensor, marg:list, epsilon:torch.float32, gpu:int, num_iter:int,
-                                         convergence_error:float) -> torch.Tensor:
-    start_time = time.time()
-    a, b = marg[0], marg[1]
-    n, m = a.size(0), b.size(0)
-    # Transfer to GPU if applicable
-    device = torch.device(f'cuda:{gpu}' if torch.cuda.is_available() else 'cpu')
-    C, a, b, f, g = map(lambda x: x.to(device), [C, a, b, torch.zeros_like(a), torch.zeros_like(b)])
-    for _ in range(num_iter):
-        # Calculate rho and update f and g
-        rho = -(f[:, None] + g[None, :] - C).clamp(max=0)
-        f = (epsilon * a - (rho + g[None, :] - C).sum(dim=1)) / m
-        g = (epsilon * b - (rho + f[:, None] - C).sum(dim=0)) / n
-        # Check for convergence based on L^1 norm of projections
-        P = ((f[:, None] + g[None, :] - C).clamp(min=0) / epsilon)
-        if compute_error(P, a, b) < convergence_error:
+@jax.jit
+def quadratic_cyclic_projection(C, marg: list, epsilon: float, num_iter: int = 50000,
+                                    convergence_error: float = 1e-9):
+    """
+    Run Cyclic Projection Algorithm
+    """
+    start_time = time.time() # measure performance
+
+    # intialize variables
+    a, b = marg[0], marg[1] # marginal distributions
+    n, m = a.shape[0], b.shape[0] # dimensions of marginals
+    error, iterations = convergence_error * 2, 0 # error and number of iterations
+    f, g = jnp.zeros_like(a), jnp.zeros_like(b) # dual functionals
+    P = jnp.clip((f[:, None] + g[None, :] - C), a_min=0) / epsilon # coupling
+
+    def _quadratic_cyclic_projection(f, g):
+        rho = -jnp.clip(-(f[:, None] + g[None, :] - C), a_max=0)
+        f = (epsilon * a - jnp.sum(rho + g[None, :] - C, axis=1)) / m
+        g = (epsilon * b - jnp.sum(rho + f[:, None] - C, axis=0)) / n
+        return f, g
+
+    # projection iterations
+    for t in range(1, num_iter + 1):
+        f, g = _quadratic_cyclic_projection(f, g) # update dual functionals
+        P = jnp.clip((f[:, None] + g[None, :] - C), a_min=0) / epsilon # update the coupling
+        error = quadratic_compute_error(P, a, b) # update the Frobenius error
+        if error < convergence_error:
+            iterations = t
             break
+
     end_time = time.time()
     time_taken = end_time - start_time
-    logger.success(f"Cyclic Projection | elapsed time: {time_taken} | error: {compute_error(P, a,b)}.")
-    cyclic_projection = P.cpu()
-    torch.cuda.empty_cache()
-    return cyclic_projection
+    logger.success(f"Cyclic Projection | Elapsed: {time_taken} | Precision: {error}.")
 
-# Run Gradient Descent with cost tensor C and 2 marginal vectors marg[0,1] on cuda:gpu
-def quadratic_gradient_descent(C: torch.Tensor, marg:list, epsilon:torch.float32, gpu:int, num_iter:int,
-                                        convergence_error:float) -> torch.Tensor:
-    start_time = time.time()
-    a, b = marg[0], marg[1]
-    n, m =a.size(0), b.size(0)
-    step = 1.0 / (m + n)
-    # Transfer to GPU if applicable
-    device = torch.device(f'cuda:{gpu}' if torch.cuda.is_available() else 'cpu')
-    C, a, b, f, g = map(lambda x: x.to(device), [C, a, b, torch.zeros_like(a), torch.zeros_like(b)])
-    for _ in range(num_iter):
-        f_prev, g_prev = f.clone(), g.clone()   
-        # Calculate P and update f and g
-        P = (f[:, None] + g[None, :] - C).clamp(min=0) / epsilon
-        f -= step * epsilon * (P.sum(dim=1) - a)
-        g -= step * epsilon * (P.sum(dim=0) - b)
-        # Check for convergence based on L^1 norm of projections
-        if compute_error(P, a, b) < convergence_error:
+    return P, error, iterations, time_taken
+
+@jax.jit
+def quadratic_gradient_descent(C: jnp.ndarray, marg: list, epsilon: float, num_iter: int = 50000,
+                                   convergence_error: float = 1e-9):
+    """
+    Run Gradient Descent Algorithm
+    """
+    start_time = time.time() # measure performance
+
+    # initialize variables
+    a, b = marg[0], marg[1] # marginal distributions
+    n, m = a.shape[0], b.shape[0] # dimensions of marginals
+    step = 1.0 / (m + n) # gradient descent step size
+    error, iterations = convergence_error * 2, 0 # error and number of iterations
+    f, g = jnp.zeros_like(a), jnp.zeros_like(b) # dual functionals
+    P = jnp.clip((f[:, None] + g[None, :] - C), a_min=0) / epsilon # coupling
+
+    # gradient descent update
+    def _quadratic_gradient_descent(f, g):
+        f -= step * epsilon * (jnp.sum(P, axis=1) - a)
+        g -= step * epsilon * (jnp.sum(P, axis=0) - b)
+        return f, g
+
+    # gradient descent iterations
+    for t in trange(num_iter):
+        f, g = _quadratic_gradient_descent(f, g) # update dual functionals
+        P = jnp.clip((f[:, None] + g[None, :] - C), a_min=0) / epsilon # update the coupling
+        error = quadratic_compute_error(P, a, b) # update Frobenius error
+        if error < convergence_error:
+            iterations = t
             break
-    gradient_descent = ((f[:, None] + g[None, :] - C).clamp(min=0) / epsilon) # Retrieve primal result from dual maximization
+
     end_time = time.time()
     time_taken = end_time - start_time
-    logger.success(f"Gradient Descent | elapsed time: {time_taken} | error: {compute_error(gradient_descent, a,b)}.")
-    gradient_descent = gradient_descent.cpu()
-    torch.cuda.empty_cache()
-    return gradient_descent
+    logger.success(f"Gradient Descent | Elapsed: {time_taken} | Precision: {error}.")
+    return P, error, iterations, time_taken
 
-# Run Fixed Point Iteration with cost tensor C and 2 marginal vectors marg[0,1] on cuda:gpu
-def quadratic_fixed_point_iteration(C:torch.Tensor, marg:list, epsilon: torch.float32, gpu:int, num_iter:int,
-                                             convergence_error:float) -> torch.Tensor:
-    start_time = time.time()
-    a, b = marg[0], marg[1]
-    n, m = a.size(0), b.size(0)
-    # Transfer to GPU if applicable
-    device = torch.device(f'cuda:{gpu}' if torch.cuda.is_available() else 'cpu')
-    C, a, b, f, g = map(lambda x: x.to(device), [C, a, b, torch.zeros_like(a), torch.zeros_like(b)])
-    for _ in range(num_iter):
-        f_prev, g_prev = f.clone(), g.clone()
-        # Calculate P and update f and g
-        P = (f[:, None] + g[None, :] - C).clamp(min=0) / epsilon
-        v = -epsilon * (P.sum(dim=1) - a)
-        f += (v - v.mean()) / m
-        u = -epsilon * (P.sum(dim=0) - b)
-        g += (u - u.mean()) / n
-        # Check for convergence based on L^1 norm of projections
-        if compute_error(P, a, b) < convergence_error:
+@jax.jit
+def quadratic_fixed_point_iteration(C, marg, epsilon, num_iter, convergence_error):
+    
+    start_time = time.time() # measure performance
+
+    # initialize variables
+    a, b = marg[0], marg[1] # marginal distributions
+    n, m = a.shape[0], b.shape[0] # dimensions of marginals
+    f, g = jnp.zeros_like(a), jnp.zeros_like(b) # dual functionals
+    error, iterations = convergence_error*2, 0 # error and number of iterations
+    P = jnp.clip((f[:, None] + g[None, :] - C), a_min=0) / epsilon # coupling
+
+    def _quadratic_fixed_point_iteration(f, g):
+        v = -epsilon * (jnp.sum(P, axis=1) - a)
+        f += (v - jnp.mean(v)) / m
+        u = -epsilon * (jnp.sum(P, axis=0) - b)
+        g += (u - jnp.mean(u)) / n
+        return f, g
+    
+    # Run over fixed point iterations
+    for t in trange(num_iter):
+        f, g = _quadratic_fixed_point_iteration(f, g) # update dual functionals
+        P = jnp.clip((f[:, None] + g[None, :] - C), a_min=0) / epsilon # update the coupling
+        error = quadratic_compute_error(P, a, b) # update the Frobenius error
+        if error < convergence_error:
+            iterations = t
             break
-    fixed_point_iteration = ((f[:, None] + g[None, :] - C).clamp(min=0) / epsilon)  # Retrieve result to CPU
+
     end_time = time.time()
     time_taken = end_time - start_time
-    logger.success(f"Fixed Point Iteration | elapsed time: {time_taken} | error: {compute_error(fixed_point_iteration, a,b)}.")
-    fixed_point_iteration = fixed_point_iteration.cpu()
-    torch.cuda.empty_cache()
-    return fixed_point_iteration
+    logger.success(f"Fixed Point Iteration | Elapsed: {time_taken} | Precision: {error}.")
 
-# Run Nesterov Gradient Descent with cost tensor C and 2 marginal vectors marg[0,1] on cuda:gpu
-def quadratic_nesterov_gradient_descent(C: torch.Tensor, marg: list, epsilon: torch.float32, gpu: int, num_iter: int,
-                                                 convergence_error: float) -> torch.Tensor:
-    start_time = time.time()
-    a, b = marg[0], marg[1]
-    n, m =a.size(0), b.size(0)
-    step = 1.0 / (m + n)
-    device = torch.device(f'cuda:{gpu}' if torch.cuda.is_available() else 'cpu')
-    C, a, b, f, g = map(lambda x: x.to(device), [C, a, b, torch.zeros_like(a), torch.zeros_like(b)])
-    f_previous, g_previous = f.clone(), g.clone()
-    for _ in range(num_iter):
+    return P, error, iterations, time_taken
+
+@jax.jit
+def quadratic_nesterov_gradient_descent(C, marg: list, epsilon: float, num_iter: int,
+                                        convergence_error: float = 1e-9):
+    """
+    Runs Nesterov Gradient Descent Algorithm
+    Input:
+    Output:
+    """
+    start_time = time.time() # measure performance
+
+    # initialize variables
+    a, b = marg[0], marg[1] # marginal distributions
+    n, m = a.shape[0], b.shape[0] # dimensions of marginals
+    step = 1.0 / (m + n) # nesterov step size
+    error, iterations = convergence_error * 2, 0 # error and number of iterations    
+    f, f_previous, g, g_previous = jnp.zeros_like(a), jnp.zeros_like(a), jnp.zeros_like(b), jnp.zeros_like(b) # dual functionals
+    P = jnp.clip((f[:, None] + g[None, :] - C), a_min=0) / epsilon # coupling
+
+    # single iteration of nesterov gradient descent
+    def _quadratic_nesterov_gradient_descent(f, g, f_previous, g_previous):
         # Compute the Nesterov updates
         f_p = f + n * (f - f_previous) / (n + 3)
         g_p = g + n * (g - g_previous) / (n + 3)
-        # Calculate P and update f and g
-        P = (f_p[:, None] + g_p[None, :] - C).clamp(min=0) / epsilon
-        f_new = f_p - step * epsilon * (P.sum(dim=1) - a)
-        g_new = g_p - step * epsilon * (P.sum(dim=0) - b)
-        f_previous.copy_(f)
-        g_previous.copy_(g)
-        f.copy_(f_new)
-        g.copy_(g_new)
-        # Check for convergence based on L^1 norm of projections
-        if compute_error(P, a, b) < convergence_error:
+        # update dual functionals
+        f_new = f_p - step * epsilon * (jnp.sum(P, axis=1) - a)
+        g_new = g_p - step * epsilon * (jnp.sum(P, axis=0) - b)
+        return f_new, g_new, f, g
+
+    for t in trange(num_iter):
+        f, g, f_previous, g_previous = _quadratic_nesterov_gradient_descent(f, g, f_previous, g_previous)
+        P = jnp.clip((f[:, None] + g[None, :] - C), a_min=0) / epsilon # update the coupling
+        error = quadratic_compute_error(P, a, b) # update the Frobenius error
+        if error < convergence_error:
+            iterations = t
             break
+
     end_time = time.time()
     time_taken = end_time - start_time
-    logger.success(f"Nesterov Gradient Descent | elapsed time: {time_taken} | error: {compute_error(nesterov_gradient_descent, a,b)}.")
-    nesterov_gradient_descent = ((f[:, None] + g[None, :] - C).clamp(min=0) / epsilon) # Retrieve primal result from dual maximization
-    nesterov_gradient_descent = nesterov_gradient_descent.cpu()
-    torch.cuda.empty_cache()
-    return nesterov_gradient_descent
+    logger.success(f"Nesterov Gradient Descent | elapsed time: {time_taken} | error: {error}.")
 
-
-def compute_error(P: torch.Tensor, a: torch.Tensor, b: torch.Tensor) -> torch.float64:
-    return max(torch.abs((P.sum(dim=1) - a)).sum(), torch.abs((P.sum(dim=0) - b)).sum())
+    return P, error, iterations, time_taken
 
 @jax.jit
-def sinkhorn_compute_error(vars, marginals, K):
+def quadratic_compute_error(P: jnp.ndarray, a: jnp.ndarray, b: jnp.ndarray) -> jnp.float64:
+    """
+    Computes maximum of two Frobenius norm as max(||P-a||, ||P-b||)
+    """
+    error_a = jnp.abs(P.sum(axis=1) - a).sum()
+    error_b = jnp.abs(P.sum(axis=0) - b).sum()
+    return jnp.maximum(error_a, error_b)
+
+@jax.jit
+def sinkhorn_compute_error(vars: list, marginals: list, K: int) -> jnp.float64:
+    """
+    Computes multi-marginal Frobenius norm
+    """
     error_value = 0.0
     N = len(marginals)
     P = jnp.einsum(K, np.arange(N), *utils.get_all_arguments(vars), np.arange(N))
@@ -167,6 +206,9 @@ def sinkhorn_compute_error(vars, marginals, K):
     return error_value
 
 @jax.jit
-def compute_P(vars, K):
+def compute_P(vars: list, K: int) -> jnp.ndarray:
+    """
+    Computes a coupling tensor P for the Sinkhorn Algorithm
+    """
     N = len(vars)
     return jnp.einsum(K, np.arange(N), *utils.get_all_arguments(vars), np.arange(N))
