@@ -1,5 +1,20 @@
 import utils
-from ..env.dependencies import *
+# list of external dependencies
+import os
+import sys
+import time
+import warnings
+import numpy as np
+from loguru import logger
+from tqdm import trange
+
+# Set the environment variable before importing JAX
+os.environ["JAX_PLATFORMS"] = "cpu"
+os.environ["XLA_PYTHON_CLIENT_PREALLOCATE"] = "false"
+
+import jax
+import jax.numpy as jnp
+from functools import partial
 
 warnings.filterwarnings("ignore")
 
@@ -9,11 +24,7 @@ logger.add(
     sys.stdout, format="{time:YYYY-MM-DD HH:mm:ss} - {level} - {message}", level="INFO"
 )
 
-def sinkhorn_update(marg, K, N, args):
-    return marg / (jnp.einsum(K, jnp.arange(N), args))
-
-@jax.jit
-def shannon_sinkhorn(marginals: list, C, epsilon:float, convergence_error:float, max_iters: int):
+def shannon_sinkhorn(marginals, C, epsilon:float, convergence_error:float, max_iters: int):
     start_time = time.time()
     N = len(marginals)
     n = marginals[0].shape[0]
@@ -24,7 +35,7 @@ def shannon_sinkhorn(marginals: list, C, epsilon:float, convergence_error:float,
     for t in range(1, max_iters+1):
         for i in range(N):
             args = utils.construct_arguments(vars, i)
-            vars[i] = sinkhorn_update(marginals[i], K, N, *args)
+            vars[i] = marginals[i] / (jnp.einsum(K, jnp.arange(N), *args))
         error = sinkhorn_compute_error(vars, marginals, K)
         if error <= convergence_error:
             iterations = t
@@ -35,8 +46,7 @@ def shannon_sinkhorn(marginals: list, C, epsilon:float, convergence_error:float,
     logger.success(f"Sinkhorn | Elapsed: {time_taken} | Precision: {error}.")
     return P, error, iterations, time_taken
 
-@jax.jit
-def quadratic_cyclic_projection(C, marg: list, epsilon: float, num_iter: int = 50000,
+def quadratic_cyclic_projection(C, marg, epsilon: float, num_iter: int = 50000,
                                     convergence_error: float = 1e-9):
     """
     Run Cyclic Projection Algorithm
@@ -50,6 +60,7 @@ def quadratic_cyclic_projection(C, marg: list, epsilon: float, num_iter: int = 5
     f, g = jnp.zeros_like(a), jnp.zeros_like(b) # dual functionals
     P = jnp.clip((f[:, None] + g[None, :] - C), a_min=0) / epsilon # coupling
 
+    @jax.jit
     def _quadratic_cyclic_projection(f, g):
         rho = -jnp.clip(-(f[:, None] + g[None, :] - C), a_max=0)
         f = (epsilon * a - jnp.sum(rho + g[None, :] - C, axis=1)) / m

@@ -1,13 +1,22 @@
 # Required modules
 import os
 import sys
-import torch
 import argparse
 import warnings
-import numpy as np
 from scipy.stats import norm
 from pathlib import Path
 from loguru import logger
+
+# Set the environment variable before importing JAX
+os.environ["JAX_PLATFORMS"] = "cpu"
+os.environ["XLA_PYTHON_CLIENT_PREALLOCATE"] = "false"
+os.environ["JAX_ENABLE_X64"] = "true"
+# Set environment variables to use alql 128 CPU cores
+os.environ['XLA_FLAGS'] = '--xla_force_host_platform_device_count=128'
+os.environ['OMP_NUM_THREADS'] = '128'
+
+import jax
+import jax.numpy as jnp
 
 
 warnings.filterwarnings("ignore")
@@ -46,17 +55,17 @@ def add_arguments(parser):
         type=str,
         help="Path to output tensor.",
         required=False,
-        default=os.path.join(os.getcwd(), "mu.pt"),
+        default=os.path.join(os.getcwd(), "mu"),
     )
 
 # generate marginal probability vector in \R^n supported on [lend, rend]
 # resulting vector is a linear combination of normal distributions with means=locs and standard deviations=scales
 def compute_gaussian_marginal(lend, rend, n, locs, scales):
-    x = np.linspace(lend, rend, n)
-    mu = np.zeros(n)
+    x = jnp.linspace(lend, rend, n)
+    mu = jnp.zeros(n)
     for (loc, scale) in zip(locs, scales):
         mu += (norm.pdf(x,loc=loc, scale=scale))/len(locs)
-    mu = torch.from_numpy(mu / mu.sum())
+    mu = mu / mu.sum()
     return mu
 
 # we may support additional distributions
@@ -68,12 +77,6 @@ def main(args):
     out = str(Path(args.out).absolute())
     outdir = os.path.dirname(out)
     out_filename = os.path.basename(out)
-
-    # check if the output filename is valid
-    if os.path.splitext(out_filename)[1] != ".pt":
-        raise ValueError(
-            f"Output filename {out} is not a valid pytorch tensor file. Please use .pt as the extension."
-        )
     
     # Make sure the output can be written to
     if not os.access(outdir, os.W_OK):
@@ -85,10 +88,7 @@ def main(args):
     # generate marginal probability tensor
     logger.info("Generating probability vector.")
     result = compute_gaussian_marginal(-5, 5, n, locs, scales)
-    
-    # save generated vector
-    logger.info(f"Saving results to {outdir}.")
-    torch.save(result, out)
+    jnp.save(out, result) # save generated probability vector
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(

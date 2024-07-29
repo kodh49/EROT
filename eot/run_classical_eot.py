@@ -1,4 +1,20 @@
-from ..env.dependencies import *
+# list of external dependencies
+import os
+import sys
+import warnings
+from loguru import logger
+from pathlib import Path
+import argparse
+import torch.multiprocessing as mp
+import numpy as np
+
+# Set the environment variable before importing JAX
+os.environ["JAX_PLATFORMS"] = "cpu"
+os.environ["XLA_PYTHON_CLIENT_PREALLOCATE"] = "false"
+
+import jax
+import jax.numpy as jnp
+
 import classical_eot as classical
 import utils as utils
 
@@ -109,11 +125,11 @@ def main(args):
 
     # load the cost tensor
     logger.info("Loading the cost tensor file generated.")
-    cost = torch.load(cost_tensor_path)
+    cost = jnp.load(cost_tensor_path)
 
     # load marginal tensors
     logger.info("Loading marginal tensor files.")
-    marg = list(map(torch.load, marginal_path))
+    marg = list(map(jnp.load, marginal_path))
     
     # Run the computation based on specification
     match entropy:
@@ -133,29 +149,8 @@ def main(args):
             }
 
     result = {}
-    # multiprocessing
-    with mp.Manager() as manager:
-        result_queue = manager.Queue() # create a joint queue
-        processes = []
-        i = 0
-        for func_label, func in algs.items():
-            gpu_device_num = i % torch.cuda.device_count()
-            process = mp.Process(target=utils.mp_add_queue, args=(
-                result_queue,
-                func_label,
-                func,
-                cost, marg, epsilon, gpu_device_num, num_iter, error
-            ))
-            processes.append(process)
-            process.start()
-            i += 1
-        
-        for process in processes:
-            process.join()
-    
-        while not result_queue.empty():
-            key, value = result_queue.get()
-            result[key] = value
+    result["cyclic"] = classical.quadratic_cyclic_projection(cost, marg, epsilon, num_iter, error)
+    # result["sinkhorn"] = classical.shannon_sinkhorn(marg, cost, epsilon, error, num_iter)
 
     # save plots of results
     logger.info(f"Saving plots to {plotdir}.")
@@ -164,7 +159,7 @@ def main(args):
 
     # save results to an pytorch tensor file
     logger.info(f"Saving coupling tensors to {outdir}.")
-    torch.save(result, os.path.join(outdir, "tensors", out_filename))
+    jnp.save(os.path.join(outdir, "tensors", out_filename), result)
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(

@@ -1,5 +1,24 @@
-# import requried external libraries
-from ..env.dependencies import *
+# list of external dependencies
+import os
+import sys
+import time
+import warnings
+from loguru import logger
+from pathlib import Path
+from tqdm import trange
+import argparse
+from functools import partial
+
+# Set the environment variable before importing JAX
+os.environ["JAX_PLATFORMS"] = "cpu"
+os.environ["XLA_PYTHON_CLIENT_PREALLOCATE"] = "false"
+os.environ["JAX_ENABLE_X64"] = "true"
+# Set environment variables to use alql 128 CPU cores
+os.environ['XLA_FLAGS'] = '--xla_force_host_platform_device_count=128'
+os.environ['OMP_NUM_THREADS'] = '128'
+
+import jax
+import jax.numpy as jnp
 
 warnings.filterwarnings("ignore")
 
@@ -9,15 +28,16 @@ logger.add(
     sys.stdout, format="{time:YYYY-MM-DD HH:mm:ss} - {level} - {message}", level="INFO"
 )
 
-def cartesian_product_jax(n, N):
-    ranges = [jnp.arange(n)] * N
+@partial(jax.jit, static_argnums=(0, 1))
+def cartesian_product_jax(n: jnp.int64, N: jnp.int64):
+    ranges = [jnp.arange(n, dtype=jnp.int64)] * N
     grid = jnp.meshgrid(*ranges, indexing='ij')
     product = jnp.stack(grid, axis=-1).reshape(-1, N)
     return product
 
-def single_strong_coulomb_cost(index, N, k):
+def single_strong_coulomb_cost(index, N: jnp.int64):
     total_cost = 0
-    marginals_to_update = jax.random.choice(jax.random.PRNGKey(0), N, (k,), replace=False)
+    marginals_to_update = jax.random.choice(jax.random.PRNGKey(0), N, (2,), replace=False)
     for i in marginals_to_update:
         for j in marginals_to_update:
             if i < j:
@@ -25,9 +45,9 @@ def single_strong_coulomb_cost(index, N, k):
                 total_cost += jnp.where(diff != 0, 2 / diff, jnp.inf)
     return total_cost
 
-def single_weak_coulomb_cost(index, N, k):
+def single_weak_coulomb_cost(index, N: jnp.int64):
     total_cost = 0
-    marginals_to_update = jax.random.choice(jax.random.PRNGKey(0), N, (k,), replace=False)
+    marginals_to_update = jax.random.choice(jax.random.PRNGKey(0), N, (2,), replace=False)
     for i in marginals_to_update:
         for j in marginals_to_update:
             if i < j:
@@ -35,9 +55,9 @@ def single_weak_coulomb_cost(index, N, k):
                 total_cost += jnp.where(diff != 0, 2 / diff, 1e+8)
     return total_cost
 
-def single_euclidean_cost(index, N, k):
+def single_euclidean_cost(index, N: jnp.int64):
     total_cost = 0
-    marginals_to_update = jax.random.choice(jax.random.PRNGKey(0), N, (k,), replace=False)
+    marginals_to_update = jax.random.choice(jax.random.PRNGKey(0), N, (2,), replace=False)
     for i in marginals_to_update:
         for j in marginals_to_update:
             if i < j:
@@ -45,16 +65,18 @@ def single_euclidean_cost(index, N, k):
                 total_cost += jnp.where(diff != 0, diff**2, jnp.inf)
     return total_cost
 
-def compute_cost(n: int, N: int, single_cost, batch_size = None, k = 2):
+def compute_cost(n: jnp.uint64, N: jnp.uint64, single_cost, batch_size: jnp.uint64 = None):
     shape = (n,) * N
+    logger.info("Generating cartesian product...")
     indices = cartesian_product_jax(n, N)
     if batch_size is None:
-        batch_size = len(indices) // 10
+        batch_size = jnp.uint64(len(indices) // 10)
+    logger.info("Initializing cost tensor...")
     C = jnp.zeros(shape)
-    compute_cost_vmap = jax.vmap(single_cost, in_axes=(0, None, None))
+    compute_cost_vmap = jax.vmap(single_cost, in_axes=(0, None))
     for batch_start in trange(0, len(indices), batch_size):
-        batch_indices = indices[batch_start:batch_start + batch_size]
-        costs = compute_cost_vmap(batch_indices, N, k)
+        batch_indices = indices[batch_start:jnp.uint64(batch_start + batch_size)]
+        costs = compute_cost_vmap(batch_indices, N)
         C = C.at[tuple(batch_indices.T)].set(costs)
     return C
 
@@ -85,7 +107,7 @@ def add_arguments(parser):
         type=str,
         help="Path to output tensor.",
         required=False,
-        default=os.path.join(os.getcwd(), "mu.pt"),
+        default=os.path.join(os.getcwd(), "cost"),
     )
     
 def main(args):
@@ -95,12 +117,6 @@ def main(args):
     out = str(Path(args.out).absolute())
     outdir = os.path.dirname(out)
     out_filename = os.path.basename(out)
-
-    # check if the output filename is valid
-    if os.path.splitext(out_filename)[1] != ".pt":
-        raise ValueError(
-            f"Output filename {out} is not a valid pytorch tensor file. Please use .pt as the extension."
-        )
     
     # Make sure the output can be written to
     if not os.access(outdir, os.W_OK):
@@ -121,8 +137,7 @@ def main(args):
     # save generated vector
     logger.info(f"Elapsed Time {end_time-start_time}")
     logger.info(f"Saving results to {outdir}.")
-    result = torch.from_dlpack(jax.dlpack.to_dlpack(result))
-    torch.save(result, out)
+    jnp.save(out, result)
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(
