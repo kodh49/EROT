@@ -5,8 +5,6 @@ import warnings
 from loguru import logger
 from pathlib import Path
 import argparse
-import torch.multiprocessing as mp
-import numpy as np
 
 # Set the environment variable before importing JAX
 os.environ["JAX_PLATFORMS"] = "cpu"
@@ -26,7 +24,6 @@ logger.add(
     sys.stdout, format="{time:YYYY-MM-DD HH:mm:ss} - {level} - {message}", level="INFO"
 )
 
-
 def add_arguments(parser):
     parser.add_argument(
         "--entropy",
@@ -38,7 +35,7 @@ def add_arguments(parser):
     parser.add_argument(
         "--cost",
         type=str,
-        help="Path to a .pt file containing the pytorch cost tensor.",
+        help="Path to a .npy file containing the jax.numpy cost tensor.",
         required=True,
     )
     parser.add_argument(
@@ -48,7 +45,7 @@ def add_arguments(parser):
         help="A list of paths to each .pt file containing a marginal probability vector. "
         "Each probability vector will be used in listed order.",
         required=True,
-        default=[os.path.join(os.getcwd(),"/tests/testdata/mu_1.pt"), os.path.join(os.getcwd(),"/tests/testdata/mu_2.pt")],
+        default=[os.path.join(os.getcwd(),"/tests/testdata/mu_1.npy"), os.path.join(os.getcwd(),"/tests/testdata/mu_2.npy")],
     )
     parser.add_argument(
         "--epsilon",
@@ -75,7 +72,7 @@ def add_arguments(parser):
         type=str,
         help="Path to output tensor.",
         required=False,
-        default=os.path.join(os.getcwd(), "result.pt"),
+        default=os.path.join(os.getcwd(), "result.npy"),
     )
 
 
@@ -90,13 +87,6 @@ def main(args):
     outdir = os.path.join(os.path.dirname(out), Path(out).stem)  # path to output directory
     out_filename = os.path.basename(out)  # output filename
     plotdir = os.path.join(outdir, "plots") # path to plot directory
-
-
-    # check if the output filename is valid
-    if os.path.splitext(out_filename)[1] != ".pt":
-        raise ValueError(
-            f"Output filename {out} is not a valid pytorch tensor file. Please use .pt as the extension."
-        )
 
     # check if the cost tensor file exists
     utils.check_file_existence(
@@ -124,11 +114,11 @@ def main(args):
         sys.exit(1)
 
     # load the cost tensor
-    logger.info("Loading the cost tensor file generated.")
+    logger.info("Loading the cost tensor.")
     cost = jnp.load(cost_tensor_path)
 
     # load marginal tensors
-    logger.info("Loading marginal tensor files.")
+    logger.info("Loading marginal distributions.")
     marg = list(map(jnp.load, marginal_path))
     
     # Run the computation based on specification
@@ -168,5 +158,4 @@ if __name__ == "__main__":
     )
     add_arguments(parser)
     args = parser.parse_args()
-    mp.set_start_method('spawn') # define multiprocessing context
     main(args)

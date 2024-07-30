@@ -35,50 +35,57 @@ def cartesian_product_jax(n: jnp.int64, N: jnp.int64):
     product = jnp.stack(grid, axis=-1).reshape(-1, N)
     return product
 
-def single_strong_coulomb_cost(index, N: jnp.int64):
-    total_cost = 0
+@partial(jax.jit, static_argnums=1)
+def single_strong_coulomb_cost(index, N: jnp.uint64):
+    """
+    Computes the Strong Coulomb cost for indexed marginals
+    """
     marginals_to_update = jax.random.choice(jax.random.PRNGKey(0), N, (2,), replace=False)
-    for i in marginals_to_update:
-        for j in marginals_to_update:
-            if i < j:
-                diff = jnp.abs(index[i] - index[j])
-                total_cost += jnp.where(diff != 0, 2 / diff, jnp.inf)
-    return total_cost
+    i, j = marginals_to_update
+    diff = jnp.abs(index[i] - index[j])
+    return jnp.where(diff != 0, 2 / diff, jnp.inf)
 
-def single_weak_coulomb_cost(index, N: jnp.int64):
-    total_cost = 0
+@partial(jax.jit, static_argnums=1)
+def single_weak_coulomb_cost(index, N: jnp.uint64):
+    """
+    Computes the Weak Coulomb cost for indexed marginals
+    """
     marginals_to_update = jax.random.choice(jax.random.PRNGKey(0), N, (2,), replace=False)
-    for i in marginals_to_update:
-        for j in marginals_to_update:
-            if i < j:
-                diff = jnp.abs(index[i] - index[j])
-                total_cost += jnp.where(diff != 0, 2 / diff, 1e+8)
-    return total_cost
+    i, j = marginals_to_update
+    diff = jnp.abs(index[i] - index[j])
+    return jnp.where(diff != 0, 2 / diff, 1e+8)
 
-def single_euclidean_cost(index, N: jnp.int64):
-    total_cost = 0
+@partial(jax.jit, static_argnums=1)
+def single_euclidean_cost(index, N: jnp.uint64):
+    """
+    Computes the Euclidean cost for indexed marginals
+    """
     marginals_to_update = jax.random.choice(jax.random.PRNGKey(0), N, (2,), replace=False)
-    for i in marginals_to_update:
-        for j in marginals_to_update:
-            if i < j:
-                diff = jnp.abs(index[i] - index[j])
-                total_cost += jnp.where(diff != 0, diff**2, jnp.inf)
-    return total_cost
+    i, j = marginals_to_update
+    diff = jnp.abs(index[i] - index[j])
+    return jnp.where(diff != 0, diff**2, jnp.inf)
 
 def compute_cost(n: jnp.uint64, N: jnp.uint64, single_cost, batch_size: jnp.uint64 = None):
+    """
+    Computes the cost tensor of N marginal probability vectors that are n-discretized under specified single_cost function
+    """
+    start_time = time.time()
     shape = (n,) * N
-    logger.info("Generating cartesian product...")
+    logger.info("Generating cartesian product")
     indices = cartesian_product_jax(n, N)
     if batch_size is None:
         batch_size = jnp.uint64(len(indices) // 10)
-    logger.info("Initializing cost tensor...")
+    logger.info("Initializing cost tensor")
     C = jnp.zeros(shape)
     compute_cost_vmap = jax.vmap(single_cost, in_axes=(0, None))
+    logger.info("Starting batch operations")
     for batch_start in trange(0, len(indices), batch_size):
         batch_indices = indices[batch_start:jnp.uint64(batch_start + batch_size)]
         costs = compute_cost_vmap(batch_indices, N)
         C = C.at[tuple(batch_indices.T)].set(costs)
-    return C
+    end_time = time.time()
+    return C, end_time - start_time
+
 
 def add_arguments(parser):
     parser.add_argument(
@@ -113,10 +120,9 @@ def add_arguments(parser):
 def main(args):
     n = args.n # number of points in each space
     N = args.N # number of marginals
-    cost_type = args.cost_type
-    out = str(Path(args.out).absolute())
+    cost_type = args.cost_type # type of the cost function
+    out = str(Path(args.out).absolute()) # file save metadata
     outdir = os.path.dirname(out)
-    out_filename = os.path.basename(out)
     
     # Make sure the output can be written to
     if not os.access(outdir, os.W_OK):
@@ -125,19 +131,17 @@ def main(args):
         print("Please check if this location exists, and that you have the permission to write to this location. Exiting..\n")
         sys.exit(1)
     
-    start_time = time.time()
     match cost_type:
         case "euclidean":
-            result = compute_cost(n, N, single_cost=single_euclidean_cost)
+            result, elapsed_time = compute_cost(n, N, single_cost=single_euclidean_cost)
         case "weak coulomb":
-            result = compute_cost(n, N, single_cost=single_weak_coulomb_cost)
+            result, elapsed_time = compute_cost(n, N, single_cost=single_weak_coulomb_cost)
         case "strong coulomb":
-            result = compute_cost(n, N, single_cost=single_strong_coulomb_cost)
-    end_time = time.time()
-    # save generated vector
-    logger.info(f"Elapsed Time {end_time-start_time}")
+            result, elapsed_time = compute_cost(n, N, single_cost=single_strong_coulomb_cost)
+    
+    logger.info(f"Elapsed Time {elapsed_time}")
     logger.info(f"Saving results to {outdir}.")
-    jnp.save(out, result)
+    jnp.save(out, result) # save generated tensor into .npy format
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(

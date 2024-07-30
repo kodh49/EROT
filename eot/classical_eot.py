@@ -14,7 +14,6 @@ os.environ["XLA_PYTHON_CLIENT_PREALLOCATE"] = "false"
 
 import jax
 import jax.numpy as jnp
-from functools import partial
 
 warnings.filterwarnings("ignore")
 
@@ -59,6 +58,7 @@ def quadratic_cyclic_projection(C, marg, epsilon: float, num_iter: int = 50000,
     error, iterations = convergence_error * 2, 0 # error and number of iterations
     f, g = jnp.zeros_like(a), jnp.zeros_like(b) # dual functionals
     P = jnp.clip((f[:, None] + g[None, :] - C), a_min=0) / epsilon # coupling
+    P_0 = jnp.clip((f[:, None] + g[None, :] - C), a_min=0) / epsilon
 
     @jax.jit
     def _quadratic_cyclic_projection(f, g):
@@ -68,7 +68,7 @@ def quadratic_cyclic_projection(C, marg, epsilon: float, num_iter: int = 50000,
         return f, g
 
     # projection iterations
-    for t in range(1, num_iter + 1):
+    for t in trange(1, num_iter + 1):
         f, g = _quadratic_cyclic_projection(f, g) # update dual functionals
         P = jnp.clip((f[:, None] + g[None, :] - C), a_min=0) / epsilon # update the coupling
         error = quadratic_compute_error(P, a, b) # update the Frobenius error
@@ -82,7 +82,6 @@ def quadratic_cyclic_projection(C, marg, epsilon: float, num_iter: int = 50000,
 
     return P, error, iterations, time_taken
 
-@jax.jit
 def quadratic_gradient_descent(C: jnp.ndarray, marg: list, epsilon: float, num_iter: int = 50000,
                                    convergence_error: float = 1e-9):
     """
@@ -99,9 +98,10 @@ def quadratic_gradient_descent(C: jnp.ndarray, marg: list, epsilon: float, num_i
     P = jnp.clip((f[:, None] + g[None, :] - C), a_min=0) / epsilon # coupling
 
     # gradient descent update
+    @jax.jit
     def _quadratic_gradient_descent(f, g):
-        f -= step * epsilon * (jnp.sum(P, axis=1) - a)
-        g -= step * epsilon * (jnp.sum(P, axis=0) - b)
+        f = f - step * epsilon * (jnp.sum(P, axis=1) - a)
+        g = g - step * epsilon * (jnp.sum(P, axis=0) - b)
         return f, g
 
     # gradient descent iterations
