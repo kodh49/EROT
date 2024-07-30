@@ -1,23 +1,8 @@
-# Required modules
-import os
-import sys
-import argparse
-import warnings
-from scipy.stats import norm
-from pathlib import Path
-from loguru import logger
-
-# Set the environment variable before importing JAX
-os.environ["JAX_PLATFORMS"] = "cpu"
-os.environ["XLA_PYTHON_CLIENT_PREALLOCATE"] = "false"
-os.environ["JAX_ENABLE_X64"] = "true"
-# Set environment variables to use alql 128 CPU cores
-os.environ['XLA_FLAGS'] = '--xla_force_host_platform_device_count=128'
-os.environ['OMP_NUM_THREADS'] = '128'
-
-import jax
-import jax.numpy as jnp
-
+# import all necessary external dependencies
+import os, sys
+ROOT_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+sys.path.append(ROOT_DIR)
+from env.lib import *
 
 warnings.filterwarnings("ignore")
 
@@ -58,9 +43,11 @@ def add_arguments(parser):
         default=os.path.join(os.getcwd(), "mu"),
     )
 
-# generate marginal probability vector in \R^n supported on [lend, rend]
-# resulting vector is a linear combination of normal distributions with means=locs and standard deviations=scales
 def compute_gaussian_marginal(lend, rend, n, locs, scales):
+    """
+    Generate a marginal probability vector in R^n that is supported on [lend, rend]
+    The resulting vector is a linear combination of normal distributions with means=locs and standard deviations=scales
+    """
     x = jnp.linspace(lend, rend, n)
     mu = jnp.zeros(n)
     for (loc, scale) in zip(locs, scales):

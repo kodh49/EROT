@@ -1,19 +1,11 @@
+# import all necessary external dependencies
+import os, sys
+ROOT_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+sys.path.append(ROOT_DIR)
+from env.lib import *
+
+# import internal dependencies
 import utils
-# list of external dependencies
-import os
-import sys
-import time
-import warnings
-import numpy as np
-from loguru import logger
-from tqdm import trange
-
-# Set the environment variable before importing JAX
-os.environ["JAX_PLATFORMS"] = "cpu"
-os.environ["XLA_PYTHON_CLIENT_PREALLOCATE"] = "false"
-
-import jax
-import jax.numpy as jnp
 
 warnings.filterwarnings("ignore")
 
@@ -97,8 +89,8 @@ def quadratic_gradient_descent(C: jnp.ndarray, marg: list, epsilon: float, num_i
     f, g = jnp.zeros_like(a), jnp.zeros_like(b) # dual functionals
     P = jnp.clip((f[:, None] + g[None, :] - C), a_min=0) / epsilon # coupling
 
-    # gradient descent update
-    @jax.jit
+    
+    @jax.jit # single gradient descent update
     def _quadratic_gradient_descent(f, g):
         f = f - step * epsilon * (jnp.sum(P, axis=1) - a)
         g = g - step * epsilon * (jnp.sum(P, axis=0) - b)
@@ -130,6 +122,7 @@ def quadratic_fixed_point_iteration(C, marg, epsilon, num_iter, convergence_erro
     error, iterations = convergence_error*2, 0 # error and number of iterations
     P = jnp.clip((f[:, None] + g[None, :] - C), a_min=0) / epsilon # coupling
 
+    @jax.jit # single fixed point iteration
     def _quadratic_fixed_point_iteration(f, g):
         v = -epsilon * (jnp.sum(P, axis=1) - a)
         f += (v - jnp.mean(v)) / m
@@ -170,7 +163,7 @@ def quadratic_nesterov_gradient_descent(C, marg: list, epsilon: float, num_iter:
     f, f_previous, g, g_previous = jnp.zeros_like(a), jnp.zeros_like(a), jnp.zeros_like(b), jnp.zeros_like(b) # dual functionals
     P = jnp.clip((f[:, None] + g[None, :] - C), a_min=0) / epsilon # coupling
 
-    # single iteration of nesterov gradient descent
+    @jax.jit # single iteration of nesterov gradient descent
     def _quadratic_nesterov_gradient_descent(f, g, f_previous, g_previous):
         # Compute the Nesterov updates
         f_p = f + n * (f - f_previous) / (n + 3)

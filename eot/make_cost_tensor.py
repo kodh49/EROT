@@ -1,24 +1,8 @@
-# list of external dependencies
-import os
-import sys
-import time
-import warnings
-from loguru import logger
-from pathlib import Path
-from tqdm import trange
-import argparse
-from functools import partial
-
-# Set the environment variable before importing JAX
-os.environ["JAX_PLATFORMS"] = "cpu"
-os.environ["XLA_PYTHON_CLIENT_PREALLOCATE"] = "false"
-os.environ["JAX_ENABLE_X64"] = "true"
-# Set environment variables to use alql 128 CPU cores
-os.environ['XLA_FLAGS'] = '--xla_force_host_platform_device_count=128'
-os.environ['OMP_NUM_THREADS'] = '128'
-
-import jax
-import jax.numpy as jnp
+# import all necessary external dependencies
+import os, sys
+ROOT_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+sys.path.append(ROOT_DIR)
+from env.lib import *
 
 warnings.filterwarnings("ignore")
 

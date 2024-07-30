@@ -1,20 +1,12 @@
-# list of external dependencies
-import os
-import sys
-import warnings
-from loguru import logger
-from pathlib import Path
-import argparse
+# import all necessary external dependencies
+import os, sys
+ROOT_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+sys.path.append(ROOT_DIR)
+from env.lib import *
 
-# Set the environment variable before importing JAX
-os.environ["JAX_PLATFORMS"] = "cpu"
-os.environ["XLA_PYTHON_CLIENT_PREALLOCATE"] = "false"
-
-import jax
-import jax.numpy as jnp
-
+# import internal dependencies
 import classical_eot as classical
-import utils as utils
+import utils
 
 warnings.filterwarnings("ignore")
 
