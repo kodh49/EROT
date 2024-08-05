@@ -105,38 +105,48 @@ def compute_error(Gamma: jnp.ndarray, rho_1: jnp.ndarray, rho_2: jnp.ndarray) ->
     diff_K = tr_2(Gamma) - rho_1 # error on the second hilbert space K
     return max(hilbert_schmidt(diff_H), hilbert_schmidt(diff_K))
 
-def quantum_gradient_descent(C: jnp.ndarray, rho_1: jnp.ndarray, rho_2: jnp.ndarray, epsilon: float = 1, 
+# Run Gradient Descent
+def quadratic_gradient_descent(C: jnp.ndarray, rho_1: jnp.ndarray, rho_2: jnp.ndarray, epsilon: float = 1, 
                              num_iter: int = 50000, convergence_error: float = 1e-9):
     """
 	Run Quantum Gradient Descent algorithm for Quadratic Regularization
 	"""
     start_time = time.time()
+
+    # initialize variables
     n, m = rho_1.shape[0], rho_2.shape[0]
     step_size = 1.0 / (m*n)
     error, iterations = convergence_error * 2, 0
     U, V = jnp.zeros_like(rho_1), jnp.zeros_like(rho_2)
     P_old, P_new = jnp.eye(n*m), jnp.eye(n*m)
     Gamma = jnp.zeros_like(C)
+
+    # run gradient descent updates
     for k in trange(num_iter):
+
         # update quantum coupling
         Gamma = jnp.kron(U, jnp.eye(m)) + jnp.kron(jnp.eye(n), V) - C
         Gamma = clip_diagonalize(Gamma) # normalize for nonnegative eigenvalues
         Gamma, P_new = diagonalize(Gamma) # obtain eigenbasis for updated Gamma
+
         # change the representation into a new basis
         Q = change_of_basis_matrix(P_old, P_new) # obtain change of basis matrix
         U = represent_H(U, Q)
         V = represent_K(V, Q)
         rho_1 = represent_H(rho_1, Q)
         rho_2 = represent_K(rho_2, Q)
+
         # compute error of the updated Gamma and decide termination
         error = compute_error(Gamma, rho_1, rho_2)
         if error < convergence_error:
             iterations = k
             break
+        
         # gradient descent updates
         U += step_size * grad_U(Gamma, rho_1, epsilon)
         V += step_size * grad_V(Gamma, rho_2, epsilon)
         P_old = P_new # update the eigenbasis matrix
+    
     end_time = time.time()
     time_taken = end_time - start_time
     logger.success(f"Gradient Descent | Elapsed: {time_taken} | Precision: {error}.")
@@ -144,3 +154,38 @@ def quantum_gradient_descent(C: jnp.ndarray, rho_1: jnp.ndarray, rho_2: jnp.ndar
 
 
 # Run Nesterov Gradient Descent
+def quadratic_nesterov_gradient_descent(C: jnp.ndarray, rho_1: jnp.ndarray, rho_2: jnp.ndarray, epsilon: float = 1,
+                                        num_iter: int = 50000, convergence_error: float = 1e-9):
+    """
+    Run Quantum Nesterov Gradient Descent algorithm for Quadratic Regularization
+    """
+    start_time = time.time()
+
+    # initialize variables
+    n, m = rho_1.shape[0], rho_2.shape[0]
+    step_size = 1.0 / (m*n)
+    error, iterations = convergence_error * 2, 0
+    U, V = jnp.zeros_like(rho_1), jnp.zeros_like(rho_2)
+    P_old, P_new = jnp.eye(n*m), jnp.eye(n*m)
+    Gamma = jnp.zeros_like(C)
+
+    # run nesterov gradient descent updates
+    for k in trange(num_iter):
+         
+        # update quantum coupling
+        Gamma = jnp.kron(U, jnp.eye(m)) + jnp.kron(jnp.eye(n), V) - C
+        Gamma = clip_diagonalize(Gamma) # normalize for nonnegative eigenvalues
+        Gamma, P_new = diagonalize(Gamma) # obtain eigenbasis for updated Gamma
+        pass
+
+        # compute error of the updated Gamma and decide termination
+        error = compute_error(Gamma, rho_1, rho_2)
+        if error < convergence_error:
+            iterations = k
+            break
+
+    end_time = time.time()
+    time_taken = end_time - start_time
+    logger.success(f"Nesterov Gradient Descent | Elapsed: {time_taken} | Precision: {error}.")
+    
+    return Gamma, error, iterations, time_taken
