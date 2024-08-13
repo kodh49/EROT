@@ -1,13 +1,8 @@
-import os
-import sys
-import torch
-import quantum_eot as quantum
-from pathlib import Path
-import argparse
-import utils as utils
-import warnings
-from loguru import logger
-import torch.multiprocessing as mp
+# import all necessary external dependencies
+import os, sys
+ROOT_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+sys.path.append(ROOT_DIR)
+from env.lib import *
 
 warnings.filterwarnings("ignore")
 

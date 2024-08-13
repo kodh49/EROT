@@ -12,30 +12,30 @@ logger.add(
     sys.stdout, format="{time:YYYY-MM-DD HH:mm:ss} - {level} - {message}", level="INFO"
 )
 
-@jax.jit
+#@jax.jit
 def tr_1(A: jnp.ndarray) -> jnp.ndarray:
     """
     computes first partial trace of an operator A
     """
-    n = int(jnp.sqrt(jnp.shape(A)[0])) # reshape A into a rank 4 tensor
+    n = jnp.sqrt(jnp.shape(A)[0]).astype(int) # reshape A into a rank 4 tensor
     return jnp.einsum('ijkl->jl', A.reshape(n,n,n,n)) / n
 
-@jax.jit
+#@jax.jit
 def tr_2(A: jnp.ndarray) -> jnp.ndarray:
     """
     computes second partial trace of an operator A
     """
-    n = int(jnp.sqrt(jnp.shape(A)[0])) # reshape A into a rank 4 tensor
+    n = jnp.sqrt(jnp.shape(A)[0]).astype(int) # reshape A into a rank 4 tensor
     return jnp.einsum('ijkl->ik', A.reshape(n,n,n,n)) / n
 
-@jax.jit
+# @jax.jit
 def grad_U(Gamma: jnp.ndarray, rho_1: jnp.ndarray, epsilon: float) -> jnp.ndarray:
     """
     computes gradient of the dual functional with respect to U
     """
     return epsilon * rho_1 - tr_2(Gamma)
 
-@jax.jit
+# @jax.jit
 def grad_V(Gamma: jnp.ndarray, rho_2: jnp.ndarray, epsilon: float) -> jnp.ndarray:
     """
     computes gradient of the dual functional with respect to V
@@ -56,23 +56,19 @@ def represent(A: jnp.ndarray, change_of_basis_matrix: jnp.ndarray) -> jnp.ndarra
 	"""
 	return jnp.linalg.solve(change_of_basis_matrix, A @ change_of_basis_matrix)
 
-@jax.jit
+# @jax.jit
 def represent_H(A: jnp.ndarray, change_of_basis_matrix: jnp.ndarray) -> jnp.ndarray:
-	"""
-	Computes the new representation of an operator A on the first Hilbert space H
-	"""
-	n = jnp.shape(A)[0]
-	lifted_A = jnp.kron(A, jnp.eye(n))
-	return tr_2(np.linalg.solve(change_of_basis_matrix, lifted_A @ change_of_basis_matrix))
+    n = jnp.shape(A)[0]
+    lifted_A = jnp.kron(A, jnp.eye(n))
+    repr_lifted_A = jnp.linalg.solve(change_of_basis_matrix, lifted_A @ change_of_basis_matrix)
+    return tr_2(repr_lifted_A)
 
-@jax.jit
+# @jax.jit
 def represent_K(A: jnp.ndarray, change_of_basis_matrix: jnp.ndarray) -> jnp.ndarray:
-	"""
-	Computes the new representation of an operator A on the second Hilbert space K
-	"""
-	n = jnp.shape(A)[0]
-	lifted_A = jnp.kron(jnp.eye(n), A)
-	return tr_1(np.linalg.solve(change_of_basis_matrix, lifted_A @ change_of_basis_matrix))
+    n = jnp.shape(A)[0]
+    lifted_A = jnp.kron(jnp.eye(n), A)
+    repr_lifted_A = jnp.linalg.solve(change_of_basis_matrix, lifted_A @ change_of_basis_matrix)
+    return tr_1(repr_lifted_A)
 
 @jax.jit
 def clip_diagonalize(A: jnp.ndarray) -> jnp.ndarray:
@@ -94,9 +90,9 @@ def hilbert_schmidt(A: jnp.ndarray) -> float:
     """
     Compute Hilbert-Schmidt norm of a matrix A
     """
-    return jnp.sqrt(jnp.trace(A.conjugate().T @ A).abs())
+    return jnp.sqrt(jnp.trace(jnp.absolute(A.conjugate().T @ A)))
 
-@jax.jit
+# @jax.jit
 def compute_error(Gamma: jnp.ndarray, rho_1: jnp.ndarray, rho_2: jnp.ndarray) -> float:
     """
     Compute the error of the quantum gradient descent
@@ -141,6 +137,3 @@ def quantum_gradient_descent(C: jnp.ndarray, rho_1: jnp.ndarray, rho_2: jnp.ndar
     time_taken = end_time - start_time
     logger.success(f"Gradient Descent | Elapsed: {time_taken} | Precision: {error}.")
     return Gamma, error, iterations, time_taken
-
-
-# Run Nesterov Gradient Descent

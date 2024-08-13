@@ -1,13 +1,7 @@
 import argparse
 import sys
 
-from . import (
-    make_cost_tensor,
-    make_marginal_tensor,
-    run_classical_eot,
-    run_quantum_eot,
-)
-
+"""
 def main():
     parser = argparse.ArgumentParser(prog="eot", add_help=False)
     subparsers = parser.add_subparsers(dest="command")
@@ -62,3 +56,5 @@ def main():
 
 if __name__ == "__main__":
     main()
+
+"""
