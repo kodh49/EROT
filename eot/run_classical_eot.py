@@ -5,8 +5,6 @@ sys.path.append(ROOT_DIR)
 from env.lib import *
 
 # import internal dependencies
-import classical_eot as classical
-import utils
 
 warnings.filterwarnings("ignore")
 

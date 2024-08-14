@@ -43,7 +43,7 @@ def add_arguments(parser):
         default=os.path.join(os.getcwd(), "mu"),
     )
 
-def compute_gaussian_marginal(lend, rend, n, locs, scales):
+def compute_gaussian_marginal(lend: float, rend: float, n: int, locs: list, scales: list):
     """
     Generate a marginal probability vector in R^n that is supported on [lend, rend]
     The resulting vector is a linear combination of normal distributions with means=locs and standard deviations=scales
