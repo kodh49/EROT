@@ -155,7 +155,7 @@ def sinkhorn_logsumexp(marginals, c, reg, precision=1e-5, max_iters=20000):
     return P, log_data
 
 # Define the regularization parameters, marginals, and cost matrices
-regularization = [10, 1, 0.5]
+regularization = [10, 1, 0.5, 1e-01, 1e-02, 1e-03, 1e-04]
 marginals = [mu_1, mu_2, mu_3]
 coulomb_costs = [coulomb_2m, coulomb_3m]
 quadratic_costs = [quadratic_2m, quadratic_3m]
