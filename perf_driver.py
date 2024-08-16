@@ -4,45 +4,143 @@ ROOT_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.append(ROOT_DIR)
 from env.lib import *
 
-warnings.filterwarnings("ignore")
-
-# Configure Loguru logger
-logger.remove()
-logger.add(
-    sys.stdout, format="{time:YYYY-MM-DD HH:mm:ss} - {level} - {message}", level="INFO"
-)
-
-# Set up a local cluster
-cluster = LocalCluster()
-client = Client(cluster)
-
-# import local developments
-from eot.make_cost_tensor import *
-from eot.make_marginal_tensor import *
+import eot.utils as utils
 
 x = jnp.linspace(-5, 5, 100)
 
-# Marginal distributions
-mu_1 = compute_gaussian_marginal(-5, 5, 100, [1.5], [0.5])
-mu_2 = compute_gaussian_marginal(-5, 5, 100, [2.5], [0.9])
-mu_3 = compute_gaussian_marginal(-5, 5, 100, [2], [0.6])
-mu_4 = compute_gaussian_marginal(-5, 5, 100, [3], [0.8])
-mu_5 = compute_gaussian_marginal(-5, 5, 100, [2.75], [0.7])
+mu_1 = norm.pdf(x, loc=1.5, scale=0.5)
+mu_2 = norm.pdf(x, loc=2.5, scale=0.9)
+mu_3 = norm.pdf(x, loc=2, scale=0.6)
+mu_4 = norm.pdf(x, loc=3, scale=0.8)
+mu_5 = norm.pdf(x, loc=2.75, scale=0.7)
 
-# Strong Coulomb Cost
-strong_coulomb_2m = compute_cost(100, 2, single_cost=single_strong_coulomb_cost)
-strong_coulomb_3m = compute_cost(100, 3, single_cost=single_strong_coulomb_cost)
-strong_coulomb_4m = compute_cost(100, 4, single_cost=single_strong_coulomb_cost)
+mu_1 = mu_1 / mu_1.sum()
+mu_2 = mu_2 / mu_2.sum()
+mu_3 = mu_3 / mu_3.sum()
+mu_4  = mu_4 / mu_4.sum()
+mu_5 = mu_5 / mu_5.sum()
 
-# Weak Coulomb Cost
-weak_coulomb_2m = compute_cost(100, 2, single_cost=single_weak_coulomb_cost)
-weak_coulomb_3m = compute_cost(100, 3, single_cost=single_weak_coulomb_cost)
-weak_coulomb_4m = compute_cost(100, 4, single_cost=single_weak_coulomb_cost)
+@partial(jax.jit, static_argnums=[1])
+def compute_cost_matrix_strong_coulomb_jax(x, N):
+    n = x.shape[0]
+    ns = (n,) * N
+    total_cost = jnp.zeros(ns)
 
-# Quadratic Cost
-quadratic_2m = compute_cost(100, 2, single_cost=single_euclidean_cost)
-quadratic_3m = compute_cost(100, 3, single_cost=single_euclidean_cost)
-quadratic_4m = compute_cost(100, 4, single_cost=single_euclidean_cost)
+    def coulumb_pairwise(x, y):
+        diff = jnp.abs(x - y)
+        return jnp.where(diff != 0, 1 / diff, jnp.inf)
+
+    for i in range(N):
+        for j in range(i + 1, N):
+            cost_m = jax.vmap(lambda x_: jax.vmap(lambda y_: coulumb_pairwise(x_, y_))(x))(x)
+            axis = list(range(i)) + list(range(i+1, j)) + list(range(j + 1, N))
+            total_cost += jnp.expand_dims(cost_m, axis=axis)
+
+    return total_cost
+
+@partial(jax.jit, static_argnums=[1])
+def compute_cost_matrix_weak_coulomb_jax(x, N):
+    n = x.shape[0]
+    ns = (n,) * N
+    total_cost = jnp.zeros(ns)
+
+    def coulumb_pairwise(x, y):
+        diff = jnp.abs(x - y)
+        return jnp.where(diff != 0, 1 / diff, 1e+8)
+
+    for i in range(N):
+        for j in range(i + 1, N):
+            cost_m = jax.vmap(lambda x_: jax.vmap(lambda y_: coulumb_pairwise(x_, y_))(x))(x)
+            axis = list(range(i)) + list(range(i+1, j)) + list(range(j + 1, N))
+            total_cost += jnp.expand_dims(cost_m, axis=axis)
+
+    return total_cost
+
+@partial(jax.jit, static_argnums=[1])
+def compute_cost_matrix_quadratic_jax(x, N):
+    n = x.shape[0]
+    ns = (n,) * N
+    total_cost = jnp.zeros(ns)
+
+    def coulumb_pairwise(x, y):
+        diff = jnp.abs(x - y)
+        return jnp.where(diff != 0, diff**2, 0)
+
+    for i in range(N):
+        for j in range(i + 1, N):
+            cost_m = jax.vmap(lambda x_: jax.vmap(lambda y_: coulumb_pairwise(x_, y_))(x))(x)
+            axis = list(range(i)) + list(range(i+1, j)) + list(range(j + 1, N))
+            total_cost += jnp.expand_dims(cost_m, axis=axis)
+
+    return total_cost
+
+
+strong_coulomb_2m = compute_cost_matrix_strong_coulomb_jax(x,2)
+strong_coulomb_3m = compute_cost_matrix_strong_coulomb_jax(x,3)
+strong_coulomb_4m = compute_cost_matrix_strong_coulomb_jax(x,4)
+
+weak_coulomb_2m = compute_cost_matrix_weak_coulomb_jax(x,2)
+weak_coulomb_3m = compute_cost_matrix_weak_coulomb_jax(x,3)
+weak_coulomb_4m = compute_cost_matrix_weak_coulomb_jax(x,4)
+
+quadratic_2m = compute_cost_matrix_quadratic_jax(x,2)
+quadratic_3m = compute_cost_matrix_quadratic_jax(x,3)
+quadratic_4m = compute_cost_matrix_quadratic_jax(x,4)
+
+@jax.jit
+def sinkhorn_compute_error(vars: list, marginals: list, K: int):
+    """
+    Computes multi-marginal Frobenius norm
+    """
+    error_value = 0.0
+    N = len(marginals)
+    P = jnp.einsum(K, np.arange(N), *utils.get_all_arguments(vars), np.arange(N))
+    for i in range(N):
+      new_error = jnp.sum(jnp.abs(jnp.einsum(P, np.arange(N), [i]) - marginals[i]))
+      error_value = jax.lax.select(error_value < new_error, new_error, error_value)
+    return error_value
+
+@jax.jit
+def compute_P(vars: list, K: int) -> jnp.ndarray:
+    """
+    Computes a coupling tensor P for the Sinkhorn Algorithm
+    """
+    N = len(vars)
+    return jnp.einsum(K, np.arange(N), *utils.get_all_arguments(vars), np.arange(N))
+
+def shannon_sinkhorn(marginals, c, reg, precision=1e-10, max_iters=10000):
+    start_time = time.time()
+    N = len(marginals)
+    n = marginals[0].shape[0]
+
+    vars = [jnp.ones(n) for i in range(N)]
+
+    K = jnp.exp(-c/reg)
+
+    error = sinkhorn_compute_error(vars, marginals, K)
+    iterations = 0
+
+    for t in trange(1, max_iters):
+        for i in range(N):
+            args = utils.construct_arguments(vars, i)
+            vars[i] = marginals[i] / (jnp.einsum(K, np.arange(N), *args))
+        # if t % 10 == 0:
+        error = sinkhorn_compute_error(vars, marginals, K)
+        iterations = t
+        if error <= precision:
+            break
+
+    P = compute_P(vars, K)
+    end_time = time.time()
+    time_taken = end_time - start_time
+
+    log_data = {
+        'steps': iterations,
+        'time': time_taken,
+        'errors': error,
+    }
+
+    return P, log_data
 
 @jax.jit
 def remove_tensor_sum(c, u):
@@ -74,7 +172,7 @@ def compute_error(potentials, marginals, cost, epsilon):
     ])
     return errors
 
-def sinkhorn_logsumexp(marginals, c, reg, precision=1e-5, max_iters=20000):
+def sinkhorn_logsumexp(marginals: list, c: jnp.ndarray, reg: float, precision: float = 1e-5, max_iters=20000):
     """
     Solves the multimarginal optimal transport problem using the Sinkhorn algorithm.
 
@@ -130,7 +228,7 @@ def sinkhorn_logsumexp(marginals, c, reg, precision=1e-5, max_iters=20000):
     return P, log_data
 
 # Define the regularization parameters, marginals, and cost matrices
-regularization = [10, 1, 0.5, 1, 1e-1, 1e-2, 1e-3, 1e-4]
+regularization = [1]
 marginals = [mu_1, mu_2, mu_3, mu_4]
 weak_coulomb_costs = [weak_coulomb_2m, weak_coulomb_3m, weak_coulomb_4m]
 strong_coulomb_costs = [strong_coulomb_2m, strong_coulomb_3m, strong_coulomb_4m]
@@ -141,65 +239,66 @@ df_2marginals = pd.DataFrame()
 df_3marginals = pd.DataFrame()
 df_4marginals = pd.DataFrame()
 
-def run_sinkhorn_for_config(marginals_subset, cost, reg, cost_type, marginals_count):
-    # Run Sinkhorn algorithm (assuming you have this function defined as per your code)
-    P, log_data = sinkhorn_logsumexp(marginals_subset, cost, reg)
+# Loop over the number of marginals
+for i in range(2, 5):
+    marginals_subset = marginals[:i]
+    if i == 2:
+        cost_matrices = [(weak_coulomb_costs[0], strong_coulomb_costs[0], quadratic_costs[0])]
+    elif i == 3:
+        cost_matrices = [(weak_coulomb_costs[1], strong_coulomb_costs[1], quadratic_costs[1])]
+    elif i == 4:
+        cost_matrices = [(weak_coulomb_costs[2], strong_coulomb_costs[2], quadratic_costs[2])]
     
-    return {
-        'regularization': reg,
-        'cost_type': cost_type,
-        'marginals': marginals_count,
-        'steps': log_data['steps'],
-        'time': log_data['time'],
-        'errors': log_data['errors'].tolist()
-    }
-
-def compute_marginal_results(marginals, regularization, weak_coulomb_costs, strong_coulomb_costs, quadratic_costs):
     results = []
-    
-    # Loop over the number of marginals
-    for i in range(2, 5):
-        marginals_subset = marginals[:i]
-        if i == 2:
-            cost_matrices = [(weak_coulomb_costs[0], 'Weak Coulomb'), (strong_coulomb_costs[0], 'Strong Coulomb'), (quadratic_costs[0], 'Quadratic')]
-        elif i == 3:
-            cost_matrices = [(weak_coulomb_costs[1], 'Weak Coulomb'), (strong_coulomb_costs[1], 'Strong Coulomb'), (quadratic_costs[1], 'Quadratic')]
-        elif i == 4:
-            cost_matrices = [(weak_coulomb_costs[2], 'Weak Coulomb'), (strong_coulomb_costs[2], 'Strong Coulomb'), (quadratic_costs[2], 'Quadratic')]
-        
-        # Parallel computation for each combination of regularization and cost matrix
-        results.extend([
-            run_sinkhorn_for_config(marginals_subset, cost, reg, cost_type, i)
-            for reg in regularization
-            for cost, cost_type in cost_matrices
-        ])
+    for reg in regularization:
+        for strong_coulomb_cost, weak_coulomb_cost, quadratic_cost in cost_matrices:
+            # Run Sinkhorn algorithm for Coulomb cost
+            P_coulomb, log_data_coulomb = shannon_sinkhorn(marginals_subset, strong_coulomb_cost, reg)
+            results.append({
+                'regularization': reg,
+                'cost_type': 'Strong Coulomb',
+                'marginals': i,
+                'steps': log_data_coulomb['steps'],
+                'time': log_data_coulomb['time'],
+                'errors': log_data_coulomb['errors'].tolist()
+            })
+            logger.success(f"Complete {i}-marginal Sinkhorn for Strong Coulomb regularization {reg}")
 
-    return results
+            # Run Sinkhorn algorithm for Coulomb cost
+            P_coulomb, log_data_coulomb = shannon_sinkhorn(marginals_subset, weak_coulomb_cost, reg)
+            results.append({
+                'regularization': reg,
+                'cost_type': 'Weak Coulomb',
+                'marginals': i,
+                'steps': log_data_coulomb['steps'],
+                'time': log_data_coulomb['time'],
+                'errors': log_data_coulomb['errors'].tolist()
+            })
+            logger.success(f"Complete {i}-marginal Sinkhorn for Weak Coulomb regularization {reg}")
 
-if __name__ == '__main__':
-    # Step 1: Set up a local Dask cluster using all available CPUs and cores automatically
-    cluster = LocalCluster()
-    client = Client(cluster)
+            # Run Sinkhorn algorithm for Quadratic cost
+            P_quadratic, log_data_quadratic = shannon_sinkhorn(marginals_subset, quadratic_cost, reg)
+            results.append({
+                'regularization': reg,
+                'cost_type': 'Quadratic',
+                'marginals': i,
+                'steps': log_data_quadratic['steps'],
+                'time': log_data_quadratic['time'],
+                'errors': log_data_quadratic['errors'].tolist()
+            })
+            logger.success(f"Complete {i}-marginal Sinkhorn for Quadratic regularization {reg}")
 
-    # Optional: print out cluster information
-    print(client)
-    dask.freeze_support()
+    # Convert the results list into a DataFrame and store it in the corresponding DataFrame
+    if i == 2:
+        df_2marginals = pd.DataFrame(results)
+    elif i == 3:
+        df_3marginals = pd.DataFrame(results)
+    elif i == 4:
+        df_4marginals = pd.DataFrame(results)
 
-    # Step 3: Run the computation with Dask
-    results = compute_marginal_results(marginals, regularization, weak_coulomb_costs, strong_coulomb_costs, quadratic_costs)
+logger.success("Saving DataFrames")
 
-    # Step 4: Trigger the computation and gather results
-    computed_results = dask.compute(*results)
-    logger.success("Computation complete")
-
-    # Step 5: Convert the results list into a DataFrame for each marginal case
-    df_2marginals = pd.DataFrame([result for result in computed_results if result['marginals'] == 2])
-    df_3marginals = pd.DataFrame([result for result in computed_results if result['marginals'] == 3])
-    df_4marginals = pd.DataFrame([result for result in computed_results if result['marginals'] == 4])
-
-    logger.success("Saving Dataframes")
-
-    # Save DataFrames to files if needed
-    df_2marginals.to_csv('df_2marginals.csv', index=False)
-    df_3marginals.to_csv('df_3marginals.csv', index=False)
-    df_4marginals.to_csv('df_4marginals.csv', index=False)
+# Save DataFrames to files if needed
+df_2marginals.to_csv('df_2marginals.csv', index=False)
+df_3marginals.to_csv('df_3marginals.csv', index=False)
+df_4marginals.to_csv('df_4marginals.csv', index=False)

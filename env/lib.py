@@ -18,6 +18,7 @@ import dask
 from dask.distributed import Client, LocalCluster
 from dask import delayed
 import multiprocessing as mp
+from typing import List, Tuple, Dict
 
 # Set JAX environment variables
 os.environ["JAX_PLATFORMS"] = "cpu"

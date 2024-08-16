@@ -31,7 +31,7 @@ mu_4 = mu_4 / mu_4.sum()
 mu_5 = mu_5 / mu_5.sum()
 
 # Set up Dask client to use the local scheduler
-client = Client(n_workers=0, threads_per_worker=None)
+client = Client(n_workers=128)
 logging.info(f'Dask client set up with {client.ncores()} cores.')
 
 # Function to compute the Coulomb cost matrix using JAX
