@@ -172,7 +172,7 @@ def sinkhorn_logsumexp(marginals: list, c: jnp.ndarray, reg: float, precision: f
     return P, log_data
 
 # Define the regularization parameters, marginals, and cost matrices
-regularization = [10, 1, 0.5, 1, 1e-1, 1e-2, 1e-3, 1e-4]
+regularization = [10, 1, 0.5, 1, 1e-1, 1e-2, 1e-3]
 marginals = [mu_1, mu_2, mu_3, mu_4]
 weak_coulomb_costs = [weak_coulomb_2m, weak_coulomb_3m, weak_coulomb_4m]
 strong_coulomb_costs = [strong_coulomb_2m, strong_coulomb_3m, strong_coulomb_4m]
@@ -184,61 +184,62 @@ df_3marginals = pd.DataFrame()
 df_4marginals = pd.DataFrame()
 
 # Loop over the number of marginals
-for i in range(2, 5):
-    marginals_subset = marginals[:i]
-    if i == 2:
-        cost_matrices = [(weak_coulomb_costs[0], strong_coulomb_costs[0], quadratic_costs[0])]
-    elif i == 3:
-        cost_matrices = [(weak_coulomb_costs[1], strong_coulomb_costs[1], quadratic_costs[1])]
-    elif i == 4:
-        cost_matrices = [(weak_coulomb_costs[2], strong_coulomb_costs[2], quadratic_costs[2])]
-    
-    results = []
-    for reg in regularization:
-        for strong_coulomb_cost, weak_coulomb_cost, quadratic_cost in cost_matrices:
-            # Run Sinkhorn algorithm for Coulomb cost
-            P_coulomb, log_data_coulomb = sinkhorn_logsumexp(marginals_subset, strong_coulomb_cost, reg)
-            results.append({
-                'regularization': reg,
-                'cost_type': 'Strong Coulomb',
-                'marginals': i,
-                'steps': log_data_coulomb['steps'],
-                'time': log_data_coulomb['time'],
-                'errors': log_data_coulomb['errors'].tolist()
-            })
-            logger.success(f"Complete {i}-marginal Sinkhorn for Strong Coulomb regularization {reg}")
+with jax.profiler.trace("/tmp/jax-trace", create_perfetto_link=True):
+    for i in range(2, 5):
+        marginals_subset = marginals[:i]
+        if i == 2:
+            cost_matrices = [(weak_coulomb_costs[0], strong_coulomb_costs[0], quadratic_costs[0])]
+        elif i == 3:
+            cost_matrices = [(weak_coulomb_costs[1], strong_coulomb_costs[1], quadratic_costs[1])]
+        elif i == 4:
+            cost_matrices = [(weak_coulomb_costs[2], strong_coulomb_costs[2], quadratic_costs[2])]
+        
+        results = []
+        for reg in regularization:
+            for strong_coulomb_cost, weak_coulomb_cost, quadratic_cost in cost_matrices:
+                # Run Sinkhorn algorithm for Coulomb cost
+                P_coulomb, log_data_coulomb = sinkhorn_logsumexp(marginals_subset, strong_coulomb_cost, reg)
+                results.append({
+                    'regularization': reg,
+                    'cost_type': 'Strong Coulomb',
+                    'marginals': i,
+                    'steps': log_data_coulomb['steps'],
+                    'time': log_data_coulomb['time'],
+                    'errors': log_data_coulomb['errors'].tolist()
+                })
+                logger.success(f"Complete {i}-marginal Sinkhorn for Strong Coulomb regularization {reg}")
 
-            # Run Sinkhorn algorithm for Coulomb cost
-            P_coulomb, log_data_coulomb = sinkhorn_logsumexp(marginals_subset, weak_coulomb_cost, reg)
-            results.append({
-                'regularization': reg,
-                'cost_type': 'Weak Coulomb',
-                'marginals': i,
-                'steps': log_data_coulomb['steps'],
-                'time': log_data_coulomb['time'],
-                'errors': log_data_coulomb['errors'].tolist()
-            })
-            logger.success(f"Complete {i}-marginal Sinkhorn for Weak Coulomb regularization {reg}")
+                # Run Sinkhorn algorithm for Coulomb cost
+                P_coulomb, log_data_coulomb = sinkhorn_logsumexp(marginals_subset, weak_coulomb_cost, reg)
+                results.append({
+                    'regularization': reg,
+                    'cost_type': 'Weak Coulomb',
+                    'marginals': i,
+                    'steps': log_data_coulomb['steps'],
+                    'time': log_data_coulomb['time'],
+                    'errors': log_data_coulomb['errors'].tolist()
+                })
+                logger.success(f"Complete {i}-marginal Sinkhorn for Weak Coulomb regularization {reg}")
 
-            # Run Sinkhorn algorithm for Quadratic cost
-            P_quadratic, log_data_quadratic = sinkhorn_logsumexp(marginals_subset, quadratic_cost, reg)
-            results.append({
-                'regularization': reg,
-                'cost_type': 'Quadratic',
-                'marginals': i,
-                'steps': log_data_quadratic['steps'],
-                'time': log_data_quadratic['time'],
-                'errors': log_data_quadratic['errors'].tolist()
-            })
-            logger.success(f"Complete {i}-marginal Sinkhorn for Quadratic regularization {reg}")
+                # Run Sinkhorn algorithm for Quadratic cost
+                P_quadratic, log_data_quadratic = sinkhorn_logsumexp(marginals_subset, quadratic_cost, reg)
+                results.append({
+                    'regularization': reg,
+                    'cost_type': 'Quadratic',
+                    'marginals': i,
+                    'steps': log_data_quadratic['steps'],
+                    'time': log_data_quadratic['time'],
+                    'errors': log_data_quadratic['errors'].tolist()
+                })
+                logger.success(f"Complete {i}-marginal Sinkhorn for Quadratic regularization {reg}")
 
-    # Convert the results list into a DataFrame and store it in the corresponding DataFrame
-    if i == 2:
-        df_2marginals = pd.DataFrame(results)
-    elif i == 3:
-        df_3marginals = pd.DataFrame(results)
-    elif i == 4:
-        df_4marginals = pd.DataFrame(results)
+        # Convert the results list into a DataFrame and store it in the corresponding DataFrame
+        if i == 2:
+            df_2marginals = pd.DataFrame(results)
+        elif i == 3:
+            df_3marginals = pd.DataFrame(results)
+        elif i == 4:
+            df_4marginals = pd.DataFrame(results)
 
 logger.success("Saving DataFrames")
 
