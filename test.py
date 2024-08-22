@@ -4,28 +4,21 @@ ROOT_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.append(ROOT_DIR)
 from env.lib import *
 import eot.quantum_eot as quantum
+import eot.utils as utils
 
 def print_tensor(loc: str) -> None:
     T = jnp.load(loc)
     print(T)
 
+rho_1 = jnp.array([[0.4, 0.1], [0.1, 0.6]])
+rho_2 = jnp.array([[0.4, 0.1], [0.1, 0.6]])
+cost = jnp.eye(rho_1.shape[0]**2)
 
-C = jnp.asarray([
-				[  141 , 2+1j ,  3j   ,  4-1j ],
-				[ 2-1j ,  56  ,  6-2j ,   7   ],
-				[ -3j  , 6+2j ,   80  , 19+1j ],
-				[ 4+1j ,  7   , 19-1j ,   16  ]
-				])
+Gamma, error, err_lst, iters, elapsed_time = quantum.quantum_gradient_descent(cost, rho_1, rho_2, convergence_error=1e-3, num_iter=500)
 
-rho_1 = jnp.asarray([
-					[0.3,  0.01+0.02j],
-					[0.01-0.02j,  0.7]
-					])
+x = np.linspace(start=1,stop=len(err_lst), num=len(err_lst), endpoint=True)
+plt.plot(x, err_lst, label=rf'Error over iteration')
+plt.legend()
+plt.show()
 
-rho_2 = jnp.asarray([
-					[0.5,  -0.04-0.01j],
-					[-0.04+0.01j,  0.5]
-					])
-
-Gamma, error, iters, elapsed_time = quantum.quantum_gradient_descent(C, rho_1, rho_2, convergence_error=1e-2, num_iter=500)
 print(Gamma)

@@ -113,6 +113,7 @@ def quantum_gradient_descent(C: jnp.ndarray, rho_1: jnp.ndarray, rho_2: jnp.ndar
     U, V = jnp.zeros_like(rho_1), jnp.zeros_like(rho_2)
     P_old, P_new = jnp.eye(n*m), jnp.eye(n*m)
     Gamma = jnp.zeros_like(C)
+    err_list = []
     for k in trange(num_iter):
         # update quantum coupling
         Gamma = jnp.kron(U, jnp.eye(m)) + jnp.kron(jnp.eye(n), V) - C
@@ -126,6 +127,7 @@ def quantum_gradient_descent(C: jnp.ndarray, rho_1: jnp.ndarray, rho_2: jnp.ndar
         rho_2 = represent_K(rho_2, Q)
         # compute error of the updated Gamma and decide termination
         error = compute_error(Gamma, rho_1, rho_2)
+        err_list.append(error)
         if error < convergence_error:
             iterations = k
             break
@@ -136,4 +138,4 @@ def quantum_gradient_descent(C: jnp.ndarray, rho_1: jnp.ndarray, rho_2: jnp.ndar
     end_time = time.time()
     time_taken = end_time - start_time
     logger.success(f"Gradient Descent | Elapsed: {time_taken} | Precision: {error}.")
-    return Gamma, error, iterations, time_taken
+    return Gamma, error, err_list, iterations, time_taken
