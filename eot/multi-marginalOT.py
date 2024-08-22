@@ -9,6 +9,20 @@ from functools import partial
 import jax.lax as lax
 
 
+
+'''
+This code is designed to solve multimarginal optimal transport (MMOT) problems using the Sinkhorn algorithm, 
+which is an iterative method for approximating the optimal coupling between multiple marginal distributions under
+certain cost functions. The code is implemented using JAX for efficient computation and automatic differentiation.
+
+
+Maria Gabriela Scapin 2024
+
+'''
+
+
+
+
 # Set up logging configuration
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
@@ -30,6 +44,32 @@ mu_4 = mu_4 / mu_4.sum()
 mu_5 = mu_5 / mu_5.sum()
 
 
+
+
+
+
+
+
+
+'''
+1. compute_cost_matrix_coulomb_jax & compute_cost_matrix_quadratic_jax:
+
+- Purpose:
+  These functions compute the cost matrices for MMOT problems,
+  where the cost is either based on the Coulomb interaction or a quadratic function.
+  The cost matrices are multi-dimensional tensors representing the interaction costs
+  between different elements in the marginals.
+
+
+- Difference:
+  The Coulomb cost uses an inverse distance metric (1/distance), 
+  while the quadratic cost uses the squared distance (distance^2).
+
+- Advantage: 
+  Both are important in different contexts. 
+  The Coulomb cost is suitable for physical systems like charged particles, 
+  while the quadratic cost is often used in more general optimal transport problems.
+'''
 
 @partial(jax.jit, static_argnums=[1])
 def compute_cost_matrix_coulomb_jax(x, N):
@@ -87,13 +127,6 @@ coulomb_4m = compute_cost_matrix_coulomb_jax(x,4)
 logging.info(f"Successfully computed coulomb_4m.")
 logging.info(f"Shape of coulomb_4m: {coulomb_4m.shape}")
 
-
-coulomb_5m = compute_cost_matrix_coulomb_jax(x,5)
-logging.info(f"Successfully computed coulomb_5m.")
-logging.info(f"Shape of coulomb_5m: {coulomb_5m.shape}")
-
-
-
 @partial(jax.jit, static_argnums=[1])
 def compute_cost_matrix_quadratic_jax(x, N):
     """
@@ -122,26 +155,37 @@ def compute_cost_matrix_quadratic_jax(x, N):
 
     return total_cost
 
-
 quadratic_2m = compute_cost_matrix_quadratic_jax(x,2)
 logging.info(f"Successfully computed quadratic_2m.")
 logging.info(f"Shape of quadratic_2m: {quadratic_2m.shape}")
 
-
 quadratic_3m = compute_cost_matrix_quadratic_jax(x,3)
 logging.info(f"Successfully computed quadratic_3m.")
 logging.info(f"Shape of quadratic_3m: {quadratic_3m.shape}")
-
 
 quadratic_4m = compute_cost_matrix_quadratic_jax(x,4)
 logging.info(f"Successfully computed quadratic_4m.")
 logging.info(f"Shape of quadratic_4m: {quadratic_4m.shape}")
 
 
-quadratic_5m = compute_cost_matrix_quadratic_jax(x,5)
-logging.info(f"Successfully computed quadratic_5m.")
-logging.info(f"Shape of quadratic_5m: {quadratic_5m.shape}")
 
+
+
+
+
+'''
+2. remove_tensor_sum:
+
+- Purpose: 
+  
+  This function adjusts the cost tensor by subtracting the "tensor sum" of potential vectors. 
+  This step is necessary to align the cost tensor with dual potentials in the context of the optimization problem.
+
+- Advantage: 
+ 
+  It transforms the cost tensor into a form that is more suitable for subsequent calculations, 
+  particularly for the entropic regularization approach used in the Sinkhorn algorithm.
+'''
 
 @jax.jit
 def remove_tensor_sum(c, u):
@@ -169,6 +213,25 @@ def remove_tensor_sum(c, u):
         This loop gradually adjusts the array c by subtracting the expanded versions of the elements in u.
         '''
     return c
+
+
+
+
+
+
+
+
+
+'''
+3. coupling_tensor:
+
+- Purpose: 
+  Computes the coupling tensor based on the given potentials and cost tensor. 
+  This tensor represents the joint probability distribution of the marginals, adjusted for entropic regularization.
+
+- Advantage:
+  It encapsulates the regularized solution to the MMOT problem, providing a soft approximation to the optimal transport plan.
+'''
 
 @jax.jit
 def coupling_tensor(potentials, cost_t, epsilon: jnp.float32) -> jnp.ndarray:
@@ -199,11 +262,30 @@ def coupling_tensor(potentials, cost_t, epsilon: jnp.float32) -> jnp.ndarray:
     return jnp.exp(-remove_tensor_sum(cost_t, potentials) / epsilon)
 
 
+
+
+
+
+
+
+
+'''
+4. tensor_marginal & tensor_marginals:
+
+- Purpose: 
+  These functions compute marginal distributions from the coupling tensor by summing over all dimensions except the one of interest.
+  The result is the marginal distribution corresponding to that dimension.
+
+- Advantage: 
+  These are essential for comparing the computed marginals with the target marginals to check the accuracy of the solution.
+'''
 def tensor_marginal(coupling: jnp.ndarray, slice_index: int) -> jnp.ndarray:
     """
     Computes a marginal of the coupling tensor by summing over all but one dimension.
+
     The tensor_marginal function calculates a marginal distribution from a multi-dimensional 
     coupling tensor by summing over all dimensions except one specified dimension. 
+
     This is often done in the context of optimal transport or probability distributions,
      where marginal distributions are needed.
 
@@ -214,6 +296,7 @@ def tensor_marginal(coupling: jnp.ndarray, slice_index: int) -> jnp.ndarray:
     Returns:
         jnp.ndarray: Computed marginal distribution.
     """
+    
     k = coupling.ndim
     axis = list(range(slice_index)) + list(range(slice_index + 1, k))
 
@@ -228,18 +311,16 @@ def tensor_marginal(coupling: jnp.ndarray, slice_index: int) -> jnp.ndarray:
 
     Concatenation: The two lists are concatenated, creating a list of indices that includes all dimensions except the slice_index dimension.
     
-    '''
-
-    '''
     coupling.sum(axis=axis): Sums over all dimensions specified in axis.
+
     Since axis contains all dimensions except the one at slice_index, the sum is performed over all other dimensions,
     effectively collapsing them and leaving only the dimension at slice_index.
+
     The result is a lower-dimensional array (tensor) that represents the marginal distribution
-      of the coupling tensor along the specified slice_index.
+    of the coupling tensor along the specified slice_index.
         
     '''
     return coupling.sum(axis=axis)
-
 
 @jax.jit
 def tensor_marginals(tensor):
@@ -251,33 +332,57 @@ def tensor_marginals(tensor):
 
     Returns:
         tuple: Tuple of computed marginals.
-    """
-     
-     '''
-        range(tensor.ndim):
+    
+    
+    
+    range(tensor.ndim):
 
-        tensor.ndim: This returns the number of dimensions (or axes) of the tensor.
-        range(tensor.ndim): Generates a sequence of integers from 0 to tensor.ndim - 1, 
-        representing all possible dimension indices of the tensor.
-        for ix in range(tensor.ndim):
+    tensor.ndim: This returns the number of dimensions (or axes) of the tensor.
+    range(tensor.ndim): Generates a sequence of integers from 0 to tensor.ndim - 1, 
+    representing all possible dimension indices of the tensor.
+    for ix in range(tensor.ndim):
 
-        This is a generator expression that iterates over all dimension indices of the tensor.
-        ix: Each ix represents a dimension index, ranging from 0 to tensor.ndim - 1.
-        tensor_marginal(tensor, ix):
+    This is a generator expression that iterates over all dimension indices of the tensor.
+    ix: Each ix represents a dimension index, ranging from 0 to tensor.ndim - 1.
+    tensor_marginal(tensor, ix):
 
-        For each dimension index ix, the function tensor_marginal(tensor, ix) is called.
-        tensor_marginal(tensor, ix): Computes the marginal distribution of the tensor along 
-        the ix-th dimension. It sums over all dimensions of the tensor except the ix-th dimension,
-         returning a reduced-dimensional tensor (or array).
+    For each dimension index ix, the function tensor_marginal(tensor, ix) is called.
+    tensor_marginal(tensor, ix): Computes the marginal distribution of the tensor along 
+    the ix-th dimension. It sums over all dimensions of the tensor except the ix-th dimension,
+        returning a reduced-dimensional tensor (or array).
 
-        tuple(...):
+    tuple(...):
 
-        The tuple() function takes the generator expression and converts it into a tuple.
-        Each element of the tuple is the marginal distribution of the tensor along one of its dimensions.
+    The tuple() function takes the generator expression and converts it into a tuple.
+    Each element of the tuple is the marginal distribution of the tensor along one of its dimensions.
 
-     '''
+     """
      return tuple(tensor_marginal(tensor, ix) for ix in range(tensor.ndim))
 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+'''
+5. compute_error:
+
+    - Purpose:
+      Calculates the error between the computed marginals and the given marginals, 
+      which helps in assessing the convergence of the Sinkhorn algorithm.
+    
+    - Advantage: 
+      Provides a quantitative measure of how close the computed solution is to the desired one, guiding the iterative process.
+'''
 @jax.jit
 def compute_error(potentials, marginals, cost, epsilon):
     """
@@ -299,6 +404,33 @@ def compute_error(potentials, marginals, cost, epsilon):
         for marginal, computed_marginal in zip(marginals, computed_marginals)
     ])
     return errors
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+'''
+6. sinkhorn_logsumexp:
+
+- Purpose: 
+   This is the core function that iteratively updates the potentials using the log-sum-exp trick to solve the MMOT problem. 
+   It also logs the number of steps, time taken, and error at each iteration.
+
+- Advantage: 
+   The Sinkhorn algorithm is highly efficient, especially when using JAX,
+   which allows for automatic differentiation and GPU acceleration. The log-sum-exp trick helps in maintaining numerical stability.
+'''
 
 def sinkhorn_logsumexp(marginals, c, reg, precision=1e-3, max_iters=350):
     """
@@ -327,6 +459,7 @@ def sinkhorn_logsumexp(marginals, c, reg, precision=1e-3, max_iters=350):
     potentials = [jnp.zeros(n, jnp.float32) for i in range(N)]
     logging.info(f"Initialized potentials with shape {n} for {N} marginals")
 
+
     def body_fn(var):
         (potentials, iter, errors) = var
 
@@ -338,9 +471,11 @@ def sinkhorn_logsumexp(marginals, c, reg, precision=1e-3, max_iters=350):
 
         iter += 1
 
+
         for i in range(N):
             axis = list(range(i)) + list(range(i + 1, N))
-            lse = logsumexp(remove_tensor_sum(c, potentials) / -reg, axis=axis)
+            potencials_minus_c = remove_tensor_sum(c, potentials)
+            lse = logsumexp(potencials_minus_c / -reg, axis=axis)
             potentials[i] += reg * jnp.log(marginals[i]) - reg * lse
             '''
             The code iterates over each dimension to update the corresponding potential vector by 
@@ -434,4 +569,5 @@ for i in range(2, 5):
 logging.info('Dataset')
 df_2marginals.to_csv('df_2marginal.csv', index=False)
 df_3marginals.to_csv('df_3marginal.csv', index=False)
-df_4marginals.to_csv('df_4marginal.csv', index=False)
+df_4marginals.to_csv('df_4marginals.csv', index=False)
+
