@@ -12,63 +12,78 @@ logger.add(
     sys.stdout, format="{time:YYYY-MM-DD HH:mm:ss} - {level} - {message}", level="INFO"
 )
 
-@partial(jax.jit, static_argnums=(0, 1))
-def cartesian_product_jax(n: jnp.int64, N: jnp.int64):
-    ranges = [jnp.arange(n, dtype=jnp.int64)] * N
-    grid = jnp.meshgrid(*ranges, indexing='ij')
-    product = jnp.stack(grid, axis=-1).reshape(-1, N)
-    return product
+'''
+- Purpose:
+  These functions compute the cost matrices for MMOT problems,
+  where the cost is either based on the Coulomb interaction or a quadratic function.
+  The cost matrices are multi-dimensional tensors representing the interaction costs
+  between different elements in the marginals.
 
-@partial(jax.jit, static_argnums=1)
-def single_strong_coulomb_cost(index, N: jnp.uint64):
-    """
-    Computes the Strong Coulomb cost for indexed marginals
-    """
-    marginals_to_update = jax.random.choice(jax.random.PRNGKey(0), N, (2,), replace=False)
-    i, j = marginals_to_update
-    diff = jnp.abs(index[i] - index[j])
-    return jnp.where(diff != 0, 2 / diff, jnp.inf)
+- Difference:
+  The Coulomb cost uses an inverse distance metric (1/distance), 
+  while the quadratic cost uses the squared distance (distance^2).
 
-@partial(jax.jit, static_argnums=1)
-def single_weak_coulomb_cost(index, N: jnp.uint64):
-    """
-    Computes the Weak Coulomb cost for indexed marginals
-    """
-    marginals_to_update = jax.random.choice(jax.random.PRNGKey(0), N, (2,), replace=False)
-    i, j = marginals_to_update
-    diff = jnp.abs(index[i] - index[j])
-    return jnp.where(diff != 0, 2 / diff, 1e+8)
+- Advantage: 
+  Both are important in different contexts. 
+  The Coulomb cost is suitable for physical systems like charged particles, 
+  while the quadratic cost is often used in more general optimal transport problems.
+'''
 
-@partial(jax.jit, static_argnums=1)
-def single_euclidean_cost(index, N: jnp.uint64):
-    """
-    Computes the Euclidean cost for indexed marginals
-    """
-    marginals_to_update = jax.random.choice(jax.random.PRNGKey(0), N, (2,), replace=False)
-    i, j = marginals_to_update
-    diff = jnp.abs(index[i] - index[j])
-    return jnp.where(diff != 0, diff**2, jnp.inf)
+@jax.jit
+def pairwise_weak_coulomb(x, y):
+        diff = jnp.abs(x - y)
+        return jnp.where(diff != 0, 1 / diff, 1e+8)
 
-def compute_cost(n: jnp.uint64, N: jnp.uint64, single_cost, batch_size: jnp.uint64 = None):
+@jax.jit
+def pairwise_strong_coulumb(x, y):
+        diff = jnp.abs(x - y)
+        return jnp.where(diff != 0, 1 / diff, jnp.inf)
+
+@jax.jit
+def pairwise_quadratic(x, y):
+        diff = jnp.abs(x - y)
+        return jnp.where(diff != 0, diff**2, 0)
+
+
+@partial(jax.jit, static_argnums=[2])
+def compute_cost(pairwise_func, x, N):
     """
-    Computes the cost tensor of N marginal probability vectors that are n-discretized under specified single_cost function
+    Computes the cost matrix for N marginals under specified pairwise distance function using JAX.
+
+    Args:
+        pairwise_func (Callable): function of two variables that computes pairwise distance
+        x (jnp.ndarray): Input array of shape (n,).
+        N (int): Number of marginals.
+
+    Returns:
+        jnp.ndarray: Quadratic cost matrix of shape (n, n, ..., n) for N dimensions.
     """
-    start_time = time.time()
-    shape = (n,) * N
-    logger.info("Generating cartesian product")
-    indices = cartesian_product_jax(n, N)
-    if batch_size is None:
-        batch_size = jnp.uint64(len(indices) // 10)
-    logger.info("Initializing cost tensor")
-    C = jnp.zeros(shape)
-    compute_cost_vmap = jax.vmap(single_cost, in_axes=(0, None))
-    logger.info("Starting batch operations")
-    for batch_start in trange(0, len(indices), batch_size):
-        batch_indices = indices[batch_start:jnp.uint64(batch_start + batch_size)]
-        costs = compute_cost_vmap(batch_indices, N)
-        C = C.at[tuple(batch_indices.T)].set(costs)
-    end_time = time.time()
-    return C, end_time - start_time
+    n = x.shape[0]
+    ns = (n,) * N
+    total_cost = jnp.zeros(ns, dtype=jnp.float32)
+
+    for i in range(N):
+        for j in range(i + 1, N):
+            cost_m = jax.vmap(lambda x_: jax.vmap(lambda y_: pairwise_func(x_, y_))(x))(x)
+            '''
+            The inner vmap computes a vector of pairwise interactions between a fixed x_ and every other element y_ in x.
+            The outer vmap repeats this process for each x_ in x, resulting in a matrix cost_m, where each element represents the pairwise 
+            interaction between different elements of x.
+            '''
+            axis = list(range(i)) + list(range(i+1, j)) + list(range(j + 1, N))
+            '''
+            The purpose of this code is to create a list of axis indices that excludes i and j. 
+            This is commonly used in operations where you want to sum or manipulate data across all dimensions except for specific ones.
+            '''
+            total_cost += jnp.expand_dims(cost_m, axis=axis)
+            '''
+            jnp.expand_dims: Adds new dimensions to cost_m at the specified axis positions.
+            axis=axis: Specifies where to insert these new dimensions.
+            total_cost += ...: Adds the expanded cost_m to total_cost, leveraging broadcasting to match shapes.
+            This operation allows cost_m to be added to total_cost correctly, even if their shapes initially differ, 
+            by expanding cost_m to have compatible dimensions.
+            '''
+    return total_cost
 
 
 def add_arguments(parser):
@@ -115,16 +130,18 @@ def main(args):
         print("Please check if this location exists, and that you have the permission to write to this location. Exiting..\n")
         sys.exit(1)
     
+    # select corresponding pairwise distance function and generate the cost tensor
     match cost_type:
+        case "quadratic":
+            result = compute_cost(pairwise_func=pairwise_quadratic, n=n, N=N)
         case "euclidean":
-            result, elapsed_time = compute_cost(n, N, single_cost=single_euclidean_cost)
+            result = jnp.sqrt(compute_cost(pairwise_func=pairwise_quadratic, n=n, N=N))
         case "weak coulomb":
-            result, elapsed_time = compute_cost(n, N, single_cost=single_weak_coulomb_cost)
+            result = compute_cost(pairwise_func=pairwise_weak_coulomb, n=n, N=N)
         case "strong coulomb":
-            result, elapsed_time = compute_cost(n, N, single_cost=single_strong_coulomb_cost)
+            result = compute_cost(pairwise_func=pairwise_strong_coulumb, n=n, N=N)
     
-    logger.info(f"Elapsed Time {elapsed_time}")
-    logger.info(f"Saving results to {outdir}.")
+    logger.info(f"Saving the cost matrix to {outdir}.")
     jnp.save(out, result) # save generated tensor into .npy format
 
 if __name__ == "__main__":

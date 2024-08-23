@@ -7,7 +7,8 @@ import time
 from scipy.stats import norm
 from functools import partial
 import jax.lax as lax
-
+from typing import List, Tuple, Dict
+from jax.typing import ArrayLike
 
 
 '''
