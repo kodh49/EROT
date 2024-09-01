@@ -12,6 +12,7 @@ dependencies:
   - pytest
   - pytest-cov
   - loguru
+  - pandas
   - tqdm
   - pip
   - pip:

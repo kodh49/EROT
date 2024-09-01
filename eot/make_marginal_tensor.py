@@ -63,7 +63,6 @@ def main(args):
     scales = args.scales
     out = str(Path(args.out).absolute())
     outdir = os.path.dirname(out)
-    out_filename = os.path.basename(out)
     
     # Make sure the output can be written to
     if not os.access(outdir, os.W_OK):
