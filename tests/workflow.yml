@@ -1,0 +1,49 @@
+# This is the workflow to test EROT implementations with various elementary test examples
+name: runTest
+run-name: ${{ github.actor }} is validating classical EROT implementations
+on: [push]
+jobs:
+  test-classical-eot:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        shell: bash -el {0}
+    steps:
+    - name: check out EROT repository code
+    - uses: actions/checkout@v4
+    - name: install dependencies
+    - uses: conda-incubator/setup-miniconda@v3
+      with:
+        miniconda-version: "latest"
+        activate-environment: erot_env
+        environment-file: env/erot_env.yml
+    - name: generate test marginal normal distributions
+      run: python ./eot/make_marginal_tensor.py --n 100 --locs 0 --scales 1.1 --out ./tests/unittests_data/mu_1 # mu_1
+      run: python ./eot/make_marginal_tensor.py --n 100 --locs -1 --scales 0.8 --out ./tests/unittests_data/mu_2 # mu_2
+      run: python ./eot/make_marginal_tensor.py --n 100 --locs 1 --scales 3.5 --out ./tests/unittests_data/mu_3 # mu_3
+      run: python ./eot/make_marginal_tensor.py --n 100 --locs -2 --scales 0.5 --out ./tests/unittests_data/mu_4 # mu_4
+    - name: generate test cost tensors
+      # 2 marginal cost tensors
+      run: python ./eot/make_cost_tensor.py --n 100 --N 2 --cost_type quadratic --out ./tests/unittests_data/quadratic_N2
+      run: python ./eot/make_cost_tensor.py --n 100 --N 2 --cost_type strong coulomb --out ./tests/unittests_data/strong_coulomb_N2
+      run: python ./eot/make_cost_tensor.py --n 100 --N 2 --cost_type weak coulomb --out ./tests/unittests_data/weak_coulomb_N2
+      # 3 marginal cost tensors
+      run: python ./eot/make_cost_tensor.py --n 100 --N 3 --cost_type quadratic --out ./tests/unittests_data/quadratic_N3
+      run: python ./eot/make_cost_tensor.py --n 100 --N 3 --cost_type strong coulomb --out ./tests/unittests_data/strong_coulomb_N3
+      run: python ./eot/make_cost_tensor.py --n 100 --N 3 --cost_type weak coulomb --out ./tests/unittests_data/weak_coulomb_N3
+      # 4 marginal cost tensors
+      run: python ./eot/make_cost_tensor.py --n 30 --N 4 --cost_type quadratic --out ./tests/unittests_data/quadratic_N4
+      run: python ./eot/make_cost_tensor.py --n 30 --N 4 --cost_type strong coulomb --out ./tests/unittests_data/strong_coulomb_N4
+      run: python ./eot/make_cost_tensor.py --n 30 --N 4 --cost_type weak coulomb --out ./tests/unittests_data/weak_coulomb_N4
+    - name: run algorithms
+      run: yacht run --json ./gtdb_ani_thresh_0.95_config.json --sample_file './tests/testdata/sample.sig.zip' --significance 0.99 --min_coverage_list 1 0.6 0.2 0.1
+    - name: unit-tests
+      run: pytest tests/ --cov-report term-missing --cov-report xml:tests.xml --cov=yacht
+    - name: Upload coverage reports to Codecov
+      uses: codecov/codecov-action@v4
+      with:
+        files: ./tests.xml
+      env:
+        CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
+            
+            
