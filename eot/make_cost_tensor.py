@@ -13,14 +13,14 @@ logger.add(
 )
 
 @partial(jax.jit, static_argnums=(0, 1))
-def cartesian_product_jax(n: jnp.int64, N: jnp.int64):
+def cartesian_product_jax(n, N):
     ranges = [jnp.arange(n, dtype=jnp.int64)] * N
     grid = jnp.meshgrid(*ranges, indexing='ij')
     product = jnp.stack(grid, axis=-1).reshape(-1, N)
     return product
 
 @partial(jax.jit, static_argnums=1)
-def single_strong_coulomb_cost(index, N: jnp.uint64):
+def single_strong_coulomb_cost(index, N):
     """
     Computes the Strong Coulomb cost for indexed marginals
     """
@@ -30,7 +30,7 @@ def single_strong_coulomb_cost(index, N: jnp.uint64):
     return jnp.where(diff != 0, 2 / diff, jnp.inf)
 
 @partial(jax.jit, static_argnums=1)
-def single_weak_coulomb_cost(index, N: jnp.uint64):
+def single_weak_coulomb_cost(index, N):
     """
     Computes the Weak Coulomb cost for indexed marginals
     """
@@ -40,7 +40,7 @@ def single_weak_coulomb_cost(index, N: jnp.uint64):
     return jnp.where(diff != 0, 2 / diff, 1e+8)
 
 @partial(jax.jit, static_argnums=1)
-def single_euclidean_cost(index, N: jnp.uint64):
+def single_euclidean_cost(index, N):
     """
     Computes the Euclidean cost for indexed marginals
     """
@@ -49,7 +49,7 @@ def single_euclidean_cost(index, N: jnp.uint64):
     diff = jnp.abs(index[i] - index[j])
     return jnp.where(diff != 0, diff**2, jnp.inf)
 
-def compute_cost(n: jnp.uint64, N: jnp.uint64, single_cost, batch_size: jnp.uint64 = None):
+def compute_cost(n, N, single_cost, batch_size = None):
     """
     Computes the cost tensor of N marginal probability vectors that are n-discretized under specified single_cost function
     """

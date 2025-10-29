@@ -88,7 +88,6 @@ def quadratic_gradient_descent(C: jnp.ndarray, marg: list, epsilon: float, num_i
     error, iterations = convergence_error * 2, 0 # error and number of iterations
     f, g = jnp.zeros_like(a), jnp.zeros_like(b) # dual functionals
     P = jnp.clip((f[:, None] + g[None, :] - C), a_min=0) / epsilon # coupling
-
     
     @jax.jit # single gradient descent update
     def _quadratic_gradient_descent(f, g):
@@ -216,3 +215,7 @@ def compute_P(vars: list, K: int) -> jnp.ndarray:
     """
     N = len(vars)
     return jnp.einsum(K, np.arange(N), *utils.get_all_arguments(vars), np.arange(N))
+
+
+
+quadratic_cyclic_projection()
