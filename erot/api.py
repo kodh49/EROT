@@ -2,8 +2,8 @@
 
 from __future__ import annotations
 
-from collections.abc import Sequence
 import time
+from collections.abc import Sequence
 from typing import Literal
 
 import jax
@@ -11,9 +11,8 @@ import jax.numpy as jnp
 
 from . import classical, quantum
 from ._runtime import enable_requested_precision, resolve_device
-from .types import SolveResult, SolverConfig
+from .types import SolverConfig, SolveResult
 from .validation import ArrayLike, validate_classical, validate_quantum
-
 
 Problem = Literal["classical", "quantum"]
 Regularizer = Literal["shannon", "quadratic"]
@@ -45,7 +44,9 @@ def solve(
             cost, marginals, config.dtype, device
         )
         scalar_dtype = cost_array.dtype
-        epsilon = jax.device_put(jnp.asarray(config.epsilon, dtype=scalar_dtype), device)
+        epsilon = jax.device_put(
+            jnp.asarray(config.epsilon, dtype=scalar_dtype), device
+        )
         tolerance = jax.device_put(
             jnp.asarray(config.tolerance, dtype=scalar_dtype), device
         )
@@ -85,7 +86,9 @@ def solve(
             cost, marginals, config.dtype, device
         )
         scalar_dtype = cost_array.real.dtype
-        epsilon = jax.device_put(jnp.asarray(config.epsilon, dtype=scalar_dtype), device)
+        epsilon = jax.device_put(
+            jnp.asarray(config.epsilon, dtype=scalar_dtype), device
+        )
         tolerance = jax.device_put(
             jnp.asarray(config.tolerance, dtype=scalar_dtype), device
         )

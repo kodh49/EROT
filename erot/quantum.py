@@ -44,12 +44,8 @@ def _marginal_error(
     coupling: jax.Array, marginal_a: jax.Array, marginal_b: jax.Array
 ) -> jax.Array:
     n, m = marginal_a.shape[0], marginal_b.shape[0]
-    error_a = jnp.sum(
-        jnp.abs(partial_trace_second(coupling, n, m) - marginal_a)
-    )
-    error_b = jnp.sum(
-        jnp.abs(partial_trace_first(coupling, n, m) - marginal_b)
-    )
+    error_a = jnp.sum(jnp.abs(partial_trace_second(coupling, n, m) - marginal_a))
+    error_b = jnp.sum(jnp.abs(partial_trace_first(coupling, n, m) - marginal_b))
     return jnp.maximum(error_a, error_b)
 
 
@@ -111,7 +107,5 @@ def quadratic_cyclic_projection(
             new_corr_psd,
         )
 
-    iterations, error, coupling, *_ = jax.lax.while_loop(
-        condition, body, initial_state
-    )
+    iterations, error, coupling, *_ = jax.lax.while_loop(condition, body, initial_state)
     return coupling, error, iterations

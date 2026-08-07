@@ -7,7 +7,6 @@ from typing import Literal
 
 import jax
 
-
 Precision = Literal["float32", "float64"]
 DeviceSpec = str
 

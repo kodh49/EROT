@@ -22,7 +22,9 @@ def _log_coupling(
     return result
 
 
-def _classical_error(coupling: jax.Array, marginals: tuple[jax.Array, ...]) -> jax.Array:
+def _classical_error(
+    coupling: jax.Array, marginals: tuple[jax.Array, ...]
+) -> jax.Array:
     error = jnp.asarray(0.0, dtype=coupling.real.dtype)
     all_axes = tuple(range(coupling.ndim))
     for axis, marginal in enumerate(marginals):
@@ -51,7 +53,9 @@ def shannon_sinkhorn(
     )
     all_axes = tuple(range(cost.ndim))
 
-    def condition(state: tuple[jax.Array, jax.Array, tuple[jax.Array, ...]]) -> jax.Array:
+    def condition(
+        state: tuple[jax.Array, jax.Array, tuple[jax.Array, ...]],
+    ) -> jax.Array:
         iteration, error, _ = state
         return jnp.logical_and(iteration < max_iterations, error > tolerance)
 
@@ -126,16 +130,12 @@ def quadratic_cyclic_projection(
         new_g = _positive_part_thresholds(
             (cost - new_f[:, None]).T, epsilon * marginal_b
         )
-        coupling = jnp.maximum(
-            new_f[:, None] + new_g[None, :] - cost, 0
-        ) / epsilon
+        coupling = jnp.maximum(new_f[:, None] + new_g[None, :] - cost, 0) / epsilon
         error = _classical_error(coupling, (marginal_a, marginal_b))
         return iteration + 1, error, new_f, new_g
 
     iterations, error, final_f, final_g = jax.lax.while_loop(
         condition, body, initial_state
     )
-    coupling = jnp.maximum(
-        final_f[:, None] + final_g[None, :] - cost, 0
-    ) / epsilon
+    coupling = jnp.maximum(final_f[:, None] + final_g[None, :] - cost, 0) / epsilon
     return coupling, error, iterations

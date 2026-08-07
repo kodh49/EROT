@@ -6,6 +6,11 @@
 __pycache__/
 *.py[cod]
 *$py.class
+*.egg-info/
+.pytest_cache/
+.venv/
+build/
+benchmark-results/
 
 # Installer logs
 pip-log.txt
@@ -13,4 +18,4 @@ pip-delete-this-directory.txt
 
 # Jupyter Notebook
 .ipynb_checkpoints
-
+test.ipynb

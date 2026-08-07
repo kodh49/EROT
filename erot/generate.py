@@ -69,8 +69,6 @@ def gaussian_marginal(
     result = np.zeros(n, dtype=dtype)
     normalizer = np.sqrt(2.0 * np.pi)
     for location, scale in zip(locs, scales, strict=True):
-        result += np.exp(-0.5 * ((x - location) / scale) ** 2) / (
-            scale * normalizer
-        )
+        result += np.exp(-0.5 * ((x - location) / scale) ** 2) / (scale * normalizer)
     result /= len(locs)
     return result / result.sum()

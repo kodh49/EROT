@@ -4,8 +4,8 @@ from __future__ import annotations
 
 import argparse
 import json
+from collections.abc import Sequence
 from pathlib import Path
-from typing import Sequence
 
 import numpy as np
 
@@ -50,8 +50,12 @@ def build_parser() -> argparse.ArgumentParser:
     _add_solver_arguments(problem_parsers.add_parser("classical"), "classical")
     _add_solver_arguments(problem_parsers.add_parser("quantum"), "quantum")
 
-    generate_parser = commands.add_parser("generate", help="Generate dense example data")
-    generate_commands = generate_parser.add_subparsers(dest="generate_kind", required=True)
+    generate_parser = commands.add_parser(
+        "generate", help="Generate dense example data"
+    )
+    generate_commands = generate_parser.add_subparsers(
+        dest="generate_kind", required=True
+    )
     cost_parser = generate_commands.add_parser("cost")
     cost_parser.add_argument("--n", type=int, required=True)
     cost_parser.add_argument("--marginals", type=int, default=2)
@@ -61,7 +65,9 @@ def build_parser() -> argparse.ArgumentParser:
         default="euclidean",
     )
     cost_parser.add_argument("--diagonal-penalty", type=float, default=1e6)
-    cost_parser.add_argument("--dtype", choices=("float32", "float64"), default="float64")
+    cost_parser.add_argument(
+        "--dtype", choices=("float32", "float64"), default="float64"
+    )
     cost_parser.add_argument("--output", required=True)
 
     marginal_parser = generate_commands.add_parser("marginal")
@@ -70,10 +76,14 @@ def build_parser() -> argparse.ArgumentParser:
     marginal_parser.add_argument("--scale", action="append", type=float, default=[])
     marginal_parser.add_argument("--lower", type=float, default=-5.0)
     marginal_parser.add_argument("--upper", type=float, default=5.0)
-    marginal_parser.add_argument("--dtype", choices=("float32", "float64"), default="float64")
+    marginal_parser.add_argument(
+        "--dtype", choices=("float32", "float64"), default="float64"
+    )
     marginal_parser.add_argument("--output", required=True)
 
-    plot_parser = commands.add_parser("plot", help="Plot a matrix coupling from a result")
+    plot_parser = commands.add_parser(
+        "plot", help="Plot a matrix coupling from a result"
+    )
     plot_parser.add_argument("result")
     plot_parser.add_argument("--output", required=True)
     return parser
@@ -138,7 +148,10 @@ def main(argv: Sequence[str] | None = None) -> int:
                 dtype=args.dtype,
                 diagonal_penalty=args.diagonal_penalty,
             )
-            summary = {"output": str(_save_array(args.output, value)), "shape": value.shape}
+            summary = {
+                "output": str(_save_array(args.output, value)),
+                "shape": value.shape,
+            }
         elif args.command == "generate" and args.generate_kind == "marginal":
             locs = args.loc or [0.0]
             scales = args.scale or [1.0]
@@ -150,12 +163,13 @@ def main(argv: Sequence[str] | None = None) -> int:
                 upper=args.upper,
                 dtype=args.dtype,
             )
-            summary = {"output": str(_save_array(args.output, value)), "shape": value.shape}
+            summary = {
+                "output": str(_save_array(args.output, value)),
+                "shape": value.shape,
+            }
         elif args.command == "plot":
             archive = load_result(args.result)
-            summary = {
-                "output": str(plot_coupling(archive["coupling"], args.output))
-            }
+            summary = {"output": str(plot_coupling(archive["coupling"], args.output))}
         else:  # pragma: no cover - argparse prevents this branch
             parser.error("unsupported command")
             return 2

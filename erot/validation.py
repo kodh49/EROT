@@ -7,12 +7,10 @@ from collections.abc import Sequence
 import jax
 import jax.numpy as jnp
 import numpy as np
+from jax.typing import ArrayLike
 
 from ._runtime import complex_dtype, real_dtype
 from .types import Precision
-
-
-ArrayLike = object
 
 
 def _finite(name: str, value: np.ndarray) -> None:

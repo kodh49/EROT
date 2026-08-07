@@ -28,9 +28,11 @@ def resolve_device(spec: str) -> jax.Device:
 
     normalized = spec.strip().lower()
     if normalized == "auto":
-        gpu_devices = jax.devices("gpu") if any(
-            device.platform == "gpu" for device in jax.devices()
-        ) else []
+        gpu_devices = (
+            jax.devices("gpu")
+            if any(device.platform == "gpu" for device in jax.devices())
+            else []
+        )
         return gpu_devices[0] if gpu_devices else jax.devices("cpu")[0]
 
     if normalized.startswith("cuda"):

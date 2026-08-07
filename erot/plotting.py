@@ -20,7 +20,9 @@ def plot_coupling(coupling: np.ndarray, output: str | Path) -> Path:
     display = np.abs(coupling) if np.iscomplexobj(coupling) else coupling
     figure, axis = plt.subplots(figsize=(8, 7))
     image = axis.imshow(display, interpolation="nearest", cmap="inferno")
-    axis.set_title("EROT coupling" if not np.iscomplexobj(coupling) else "|EROT coupling|")
+    axis.set_title(
+        "EROT coupling" if not np.iscomplexobj(coupling) else "|EROT coupling|"
+    )
     figure.colorbar(image, ax=axis, shrink=0.8)
     figure.tight_layout()
     figure.savefig(destination, dpi=150)
